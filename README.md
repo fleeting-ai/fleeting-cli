@@ -35,6 +35,7 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | F3 | Shrink grid; at 3×3 zoom focus to 2×2 then 3×3 |
 | F4 | Unzoom, then grow grid |
 | Ctrl+M | Message along an allowed peer edge |
+| Ctrl+C | Interrupt in the focused OMP (does not quit Fleeting) |
 | Ctrl+Q | Quit Fleeting |
 
 ## Config
