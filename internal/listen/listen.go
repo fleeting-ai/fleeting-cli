@@ -109,6 +109,7 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 		"FLEETING_ROLE="+a.Role,
 		"FLEETING_FLEET="+fleetID,
 		"FLEETING_GUID="+guid,
+		"OMP_PROFILE="+a.Name,
 		"TERM=xterm-256color",
 		"COLORTERM=truecolor",
 	)

@@ -116,7 +116,7 @@ func DefaultCmd(a *Agent) []string {
 		msg := "omp not found on PATH. Install Oh My Pi, then restart fleeting up:\\n  curl -fsSL https://omp.sh/install | sh\\n"
 		return []string{"bash", "-lc", "printf '%b' " + shellQuote(msg) + "; echo persona=" + a.Name + "; sleep 3600"}
 	}
-	return []string{omp, "--alias", a.Name, "--session-dir", session}
+	return []string{omp, "--profile", a.Name, "--alias", a.Name, "--session-dir", session}
 }
 
 func shellQuote(s string) string {
