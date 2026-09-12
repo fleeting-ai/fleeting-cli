@@ -207,7 +207,7 @@ func (s *Server) Snapshots() []Snapshot {
 		se.mu.Lock()
 		screen := ""
 		if se.VT != nil {
-			screen = se.VT.String()
+			screen = dumpVT(se.VT)
 		}
 		st := presence.Of(se.alive, se.last, screen)
 		out = append(out, Snapshot{

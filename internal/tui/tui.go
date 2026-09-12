@@ -281,43 +281,16 @@ func cellView(w, h, idx int, s *listen.Snapshot, focus bool) string {
 	if focus {
 		fg = lipgloss.Color("81")
 	}
-	st := lipgloss.NewStyle().Width(w - 2).Height(h - 2).Border(lipgloss.NormalBorder()).BorderForeground(fg)
+	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(fg)
 	if s == nil {
-		return st.Render(fmt.Sprintf("%d  —", idx+1))
+		return box.Width(w - 2).Height(h - 2).Render(fmt.Sprintf("%d  —", idx+1))
 	}
 	dot := statusDot(s.Status)
 	title := fmt.Sprintf("%s %s %s", s.Name, dot, s.Lane)
 	if s.Hub {
 		title += " HUB"
 	}
-	innerW, innerH := w-2, h-3
-	if innerW < 1 {
-		innerW = 1
-	}
-	if innerH < 1 {
-		innerH = 1
-	}
-	body := clipScreen(s.Screen, innerW, innerH)
-	return st.Render(title + "\n" + body)
-}
-
-func clipScreen(s string, cols, rows int) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	if len(lines) > rows {
-		lines = lines[:rows]
-	}
-	for len(lines) < rows {
-		lines = append(lines, "")
-	}
-	for i, ln := range lines {
-		runes := []rune(ln)
-		if len(runes) > cols {
-			lines[i] = string(runes[:cols])
-		} else if len(runes) < cols {
-			lines[i] = ln + strings.Repeat(" ", cols-len(runes))
-		}
-	}
-	return strings.Join(lines, "\n")
+	return box.Render(title + "\n" + s.Screen)
 }
 
 func statusDot(st string) string {
