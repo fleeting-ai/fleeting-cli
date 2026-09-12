@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/richard-ginsberg/fleeting/internal/config"
 	"github.com/richard-ginsberg/fleeting/internal/listen"
 	"github.com/richard-ginsberg/fleeting/internal/spool"
@@ -34,6 +35,7 @@ type Model struct {
 type tickMsg time.Time
 
 func New(srv *listen.Server, cfg *config.File, home string) Model {
+	lipgloss.SetColorProfile(termenv.ANSI256)
 	return Model{
 		srv:  srv,
 		cfg:  cfg,
@@ -186,7 +188,7 @@ func (m Model) gridBox() (w, h int) {
 
 const (
 	outerBorder = 2
-	gutterSize  = 1
+	gutterSize  = 2
 	cellBorder  = 2
 	titleRows   = 1
 )
@@ -197,13 +199,19 @@ func cellGeom(termW, gridH, n int) (cellW, cellH, cols, rows int) {
 	}
 	availW := termW - outerBorder - gutterSize*(n+1)
 	availH := gridH - outerBorder - gutterSize*(n+1)
+	if availW < n {
+		availW = n
+	}
+	if availH < n {
+		availH = n
+	}
 	cellW = availW / n
 	cellH = availH / n
-	if cellW < 12 {
-		cellW = 12
+	if cellW < 1 {
+		cellW = 1
 	}
-	if cellH < 6 {
-		cellH = 6
+	if cellH < 3 {
+		cellH = 3
 	}
 	cols = cellW - cellBorder
 	rows = cellH - cellBorder - titleRows
@@ -344,39 +352,26 @@ func (m Model) renderGrid(w, h int) string {
 	n := m.grid
 	cellW, cellH, _, _ := cellGeom(w, h, n)
 	pageSize := n * n
-	gutterStyle := func(page int, height int) string {
-		if height < 1 {
-			height = 1
-		}
-		line := strings.Repeat(" ", gutterSize)
-		lines := make([]string, height)
-		for i := range lines {
-			lines[i] = line
-		}
-		return lipgloss.NewStyle().Background(pageColor(page)).Render(strings.Join(lines, "\n"))
-	}
 	colViews := make([]string, 0, n)
 	var colH int
 	for c := 0; c < n; c++ {
 		rows := make([]string, 0, n)
-		colPage := pageOf(globalIndex(m.colOff, n, c, 0), pageSize)
 		for r := 0; r < n; r++ {
 			vis := r*n + c
 			gidx := globalIndex(m.colOff, n, c, r)
 			pg := pageOf(gidx, pageSize)
 			rows = append(rows, cellView(cellW, cellH, gidx, m.snapAt(gidx), vis == m.focus, pageColor(pg)))
 			if r+1 < n {
-				rows = append(rows, lipgloss.NewStyle().Background(pageColor(pg)).Render(strings.Repeat(" ", cellW)))
+				rows = append(rows, fillANSI(pageANSI(pg), cellW, gutterSize))
 			}
 		}
 		stack := lipgloss.JoinVertical(lipgloss.Left, rows...)
 		colH = lipgloss.Height(stack)
 		colViews = append(colViews, stack)
-		_ = colPage
 	}
-	var parts []string
 	lo, hi := m.hubPages()
-	parts = append(parts, gutterStyle(lo, colH))
+	var parts []string
+	parts = append(parts, fillANSI(pageANSI(lo), gutterSize, colH))
 	for c, col := range colViews {
 		colPage := pageOf(globalIndex(m.colOff, n, c, 0), pageSize)
 		parts = append(parts, col)
@@ -384,21 +379,10 @@ func (m Model) renderGrid(w, h int) string {
 		if c+1 < n {
 			next = pageOf(globalIndex(m.colOff, n, c+1, 0), pageSize)
 		}
-		parts = append(parts, gutterStyle(next, colH))
+		parts = append(parts, fillANSI(pageANSI(next), gutterSize, colH))
 	}
 	inner := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	outer := lipgloss.NewStyle().
-		Border(lipgloss.ThickBorder()).
-		BorderForeground(pageColor(lo)).
-		Background(pageColor(lo)).
-		Width(w).
-		MaxWidth(w).
-		Height(h).
-		MaxHeight(h)
-	if lo != hi {
-		outer = outer.BorderRightForeground(pageColor(hi)).BorderBottomForeground(pageColor(hi))
-	}
-	return outer.Render(inner)
+	return frameANSI(inner, w, h, lo, hi)
 }
 
 func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color) string {
@@ -450,7 +434,7 @@ func statusDot(st string) string {
 func (m Model) renderBar(w int) string {
 	lo, _ := m.hubPages()
 	label := pageLabel(m.colOff, m.grid)
-	pageBit := lipgloss.NewStyle().Background(pageColor(lo)).Foreground(lipgloss.Color("16")).Bold(true).Padding(0, 1).Render(label)
+	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
 	line := fmt.Sprintf(" %dx%d  focus=%s  alt←/→ col  F7/F8 page  tab  F3/F4 grid  ctrl+q", m.grid, m.grid, focus)
