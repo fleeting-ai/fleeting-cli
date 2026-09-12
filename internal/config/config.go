@@ -108,15 +108,15 @@ func (f *File) Validate() error {
 	return nil
 }
 
-// DefaultCmd launches Oh My Pi as that persona (--alias is the 4-letter name).
+// DefaultCmd launches Oh My Pi with an isolated profile named after the persona.
+// Do not pass --alias: that only writes a shell shortcut to bashrc and exits.
 func DefaultCmd(a *Agent) []string {
-	session := filepath.Join(Dir(), "sessions", a.Name)
 	omp, err := exec.LookPath("omp")
 	if err != nil {
 		msg := "omp not found on PATH. Install Oh My Pi, then restart fleeting up:\\n  curl -fsSL https://omp.sh/install | sh\\n"
 		return []string{"bash", "-lc", "printf '%b' " + shellQuote(msg) + "; echo persona=" + a.Name + "; sleep 3600"}
 	}
-	return []string{omp, "--profile", a.Name, "--alias", a.Name, "--session-dir", session}
+	return []string{omp, "--profile", a.Name}
 }
 
 func shellQuote(s string) string {
@@ -125,7 +125,7 @@ func shellQuote(s string) string {
 
 func Example() string {
 	return `# Fleeting fleet file
-# Empty cmd: → Oh My Pi with --alias <name> (install: curl -fsSL https://omp.sh/install | sh)
+# Empty cmd: launches omp --profile <name> (isolated OMP state per persona)
 operator: richard
 grid: 3
 

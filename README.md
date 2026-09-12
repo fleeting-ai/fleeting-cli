@@ -2,7 +2,7 @@
 
 One CLI pane of glass for many Oh My Pi (and later other) agent TUIs. Live PTY cells in a Brady Bunch grid. Default-deny hub-and-spoke. Hiro and Risa sit at 30,000 feet over every fleet you control.
 
-Each occupied cell runs `omp --profile <4-letter-name> --alias <4-letter-name>` so the familiar OMP layout (todos, bottom bar) is the cell. Empty cells stay empty. Resize the outer window and each inner PTY is SIGWINCH’d to match.
+Each occupied cell runs `omp --profile <4-letter-name>` so that persona has its own OMP state (`~/.omp/profiles/<name>/`). `--alias` is a shell-shortcut installer and must not be used here. Empty cells stay empty. Resize the outer window and each inner PTY is SIGWINCH’d to match.
 
 ## Oh My Pi (required for cells)
 
