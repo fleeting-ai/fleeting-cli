@@ -20,12 +20,14 @@ Then from this repo (rebuild if you already ran `up`):
 go run ./cmd/fleeting up
 ```
 
-Each agent’s session dir is `~/.fleeting/sessions/<name>`. Persona is `--alias nova` (etc). If `omp` is missing, the cell shows the install line instead of crashing the grid.
+Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, the cell shows the install line instead of crashing the grid.
 
 ## Keys
 
 | Key | Action |
 | --- | --- |
+| Alt+← / Alt+→ | Column page (shift one column; split teal/yellow when spanning pages) |
+| Ctrl+← / Ctrl+→ | Full page (n columns; one background) |
 | Tab / Shift+Tab | Cycle cells (everything else goes into the focused OMP) |
 | Alt+1–9 | Jump to cell |
 | F1 / F2 | Switch hub |

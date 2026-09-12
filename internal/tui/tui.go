@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -14,20 +13,22 @@ import (
 )
 
 type Model struct {
-	srv      *listen.Server
-	cfg      *config.File
-	home     string
-	width    int
-	height   int
-	grid     int
-	hubIdx   int
-	focus    int
-	snaps    []listen.Snapshot
-	msgTo    string
-	msgBody  string
-	mode     string // "" | "msg"
-	status   string
-	lastErr  string
+	srv     *listen.Server
+	cfg     *config.File
+	home    string
+	width   int
+	height  int
+	grid    int
+	hubIdx  int
+	focus   int
+	colOff  int
+	snaps   []listen.Snapshot
+	byName  map[string]listen.Snapshot
+	msgTo   string
+	msgBody string
+	mode    string
+	status  string
+	lastErr string
 }
 
 type tickMsg time.Time
@@ -54,7 +55,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.srv.Resize(c, r)
 	case tickMsg:
 		m.snaps = m.srv.Snapshots()
-		sort.Slice(m.snaps, func(i, j int) bool { return m.snaps[i].Name < m.snaps[j].Name })
+		m.byName = make(map[string]listen.Snapshot, len(m.snaps))
+		for _, s := range m.snaps {
+			m.byName[s.Name] = s
+		}
 		return m, tea.Tick(time.Millisecond*120, func(t time.Time) tea.Msg { return tickMsg(t) })
 	case tea.KeyMsg:
 		return m.key(msg)
@@ -115,12 +119,14 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		c, r := m.paneSize()
 		m.srv.Resize(c, r)
+		m.colOff = clamp(m.colOff, 0, m.maxOff())
 	case "f4":
 		if m.grid < 6 {
 			m.grid++
 		}
 		c, r := m.paneSize()
 		m.srv.Resize(c, r)
+		m.colOff = clamp(m.colOff, 0, m.maxOff())
 	case "ctrl+m":
 		m.mode = "msg"
 		m.msgTo = ""
@@ -128,6 +134,14 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.msgTo = se.Peers[0]
 		}
 		m.msgBody = ""
+	case "alt+left":
+		m.colOff = clamp(m.colOff-1, 0, m.maxOff())
+	case "alt+right":
+		m.colOff = clamp(m.colOff+1, 0, m.maxOff())
+	case "ctrl+left", "alt+pgup":
+		m.colOff = clamp(m.colOff-m.grid, 0, m.maxOff())
+	case "ctrl+right", "alt+pgdown":
+		m.colOff = clamp(m.colOff+m.grid, 0, m.maxOff())
 	case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
 		m.focus = int(s[len(s)-1] - '1')
 	default:
@@ -174,12 +188,50 @@ func (m Model) paneSize() (cols, rows int) {
 	return cols, rows
 }
 
-func (m Model) focused() *listen.Snapshot {
-	hub := m.hubSnaps()
-	if m.focus >= 0 && m.focus < len(hub) {
-		return &hub[m.focus]
+func (m Model) maxOff() int {
+	return maxColOffset(len(m.orderedNames()), m.grid)
+}
+
+func (m Model) orderedNames() []string {
+	if len(m.cfg.Fleets) == 0 {
+		out := make([]string, 0, len(m.snaps))
+		for _, s := range m.snaps {
+			out = append(out, s.Name)
+		}
+		return out
 	}
-	return nil
+	fl := m.cfg.Fleets[m.hubIdx]
+	out := make([]string, 0, len(fl.Agents))
+	for _, a := range fl.Agents {
+		out = append(out, a.Name)
+	}
+	return out
+}
+
+func (m Model) snapAt(global int) *listen.Snapshot {
+	names := m.orderedNames()
+	if global < 0 || global >= len(names) {
+		return nil
+	}
+	s, ok := m.byName[names[global]]
+	if !ok {
+		return nil
+	}
+	return &s
+}
+
+func (m Model) visualToGlobal(vis int) int {
+	n := m.grid
+	if n <= 0 {
+		return vis
+	}
+	r := vis / n
+	c := vis % n
+	return globalIndex(m.colOff, n, c, r)
+}
+
+func (m Model) focused() *listen.Snapshot {
+	return m.snapAt(m.visualToGlobal(m.focus))
 }
 
 func (m Model) focusedName() string {
@@ -189,18 +241,30 @@ func (m Model) focusedName() string {
 	return ""
 }
 
-func (m Model) hubSnaps() []listen.Snapshot {
-	if len(m.cfg.Fleets) == 0 {
-		return m.snaps
-	}
-	id := m.cfg.Fleets[m.hubIdx].ID
-	var out []listen.Snapshot
-	for _, s := range m.snaps {
-		if s.Fleet == id {
-			out = append(out, s)
+func (m Model) hubPages() (lo, hi int) {
+	n := m.grid
+	pageSize := n * n
+	lo, hi = -1, -1
+	for c := 0; c < n; c++ {
+		for r := 0; r < n; r++ {
+			p := pageOf(globalIndex(m.colOff, n, c, r), pageSize)
+			if lo < 0 || p < lo {
+				lo = p
+			}
+			if p > hi {
+				hi = p
+			}
 		}
 	}
-	return out
+	return lo, hi
+}
+
+func pageColor(page int) lipgloss.Color {
+	palette := []string{"#0D9488", "#EAB308", "#A855F7", "#F97316", "#38BDF8", "#F472B6"}
+	if page < 0 {
+		page = 0
+	}
+	return lipgloss.Color(palette[page%len(palette)])
 }
 
 func (m Model) View() string {
@@ -257,33 +321,42 @@ func (m Model) renderGrid(w, h int) string {
 	if cellH < 4 {
 		cellH = 4
 	}
-	hub := m.hubSnaps()
-	rows := make([]string, 0, n)
-	i := 0
-	for r := 0; r < n; r++ {
-		cols := make([]string, 0, n)
-		for c := 0; c < n; c++ {
-			focused := i == m.focus
-			var snap *listen.Snapshot
-			if i < len(hub) {
-				snap = &hub[i]
-			}
-			cols = append(cols, cellView(cellW, cellH, i, snap, focused))
-			i++
+	pageSize := n * n
+	colViews := make([]string, 0, n)
+	for c := 0; c < n; c++ {
+		rows := make([]string, 0, n)
+		colPage := pageOf(globalIndex(m.colOff, n, c, 0), pageSize)
+		bg := pageColor(colPage)
+		for r := 0; r < n; r++ {
+			vis := r*n + c
+			gidx := globalIndex(m.colOff, n, c, r)
+			pg := pageOf(gidx, pageSize)
+			rows = append(rows, cellView(cellW, cellH, gidx, m.snapAt(gidx), vis == m.focus, pageColor(pg)))
 		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, cols...))
+		stack := lipgloss.JoinVertical(lipgloss.Left, rows...)
+		pad := lipgloss.NewStyle().Background(bg).Padding(0, 1)
+		colViews = append(colViews, pad.Render(stack))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	inner := lipgloss.JoinHorizontal(lipgloss.Top, colViews...)
+	lo, hi := m.hubPages()
+	outer := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(pageColor(lo)).
+		Background(pageColor(lo))
+	if lo != hi {
+		outer = outer.BorderRightForeground(pageColor(hi)).BorderBottomForeground(pageColor(hi))
+	}
+	return outer.Render(inner)
 }
 
-func cellView(w, h, idx int, s *listen.Snapshot, focus bool) string {
-	fg := lipgloss.Color("240")
+func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color) string {
+	fg := page
 	if focus {
-		fg = lipgloss.Color("81")
+		fg = lipgloss.Color("15")
 	}
 	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(fg)
 	if s == nil {
-		return box.Width(w - 2).Height(h - 2).Render(fmt.Sprintf("%d  —", idx+1))
+		return box.Width(w - 4).Height(h - 2).Render(fmt.Sprintf("%d  —", idx+1))
 	}
 	dot := statusDot(s.Status)
 	title := fmt.Sprintf("%s %s %s", s.Name, dot, s.Lane)
@@ -309,9 +382,12 @@ func statusDot(st string) string {
 }
 
 func (m Model) renderBar(w int) string {
-	st := lipgloss.NewStyle().Width(w).Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
+	lo, _ := m.hubPages()
+	label := pageLabel(m.colOff, m.grid)
+	pageBit := lipgloss.NewStyle().Background(pageColor(lo)).Foreground(lipgloss.Color("16")).Bold(true).Padding(0, 1).Render(label)
+	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  tab cells  alt+1-9  F1/F2 hub  F3/F4 grid  ctrl+m msg  ctrl+q quit", m.grid, m.grid, focus)
+	line := fmt.Sprintf(" %dx%d  focus=%s  alt←/→ col  ctrl←/→ page  tab cells  F1/F2 hub  F3/F4 grid  ctrl+q", m.grid, m.grid, focus)
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {
@@ -320,7 +396,8 @@ func (m Model) renderBar(w int) string {
 	if m.mode == "msg" {
 		line = fmt.Sprintf(" msg %s → %s: %s", m.focusedName(), m.msgTo, m.msgBody)
 	}
-	return st.Render(line)
+	pad := rest.Width(w - lipgloss.Width(pageBit)).Render(line)
+	return lipgloss.JoinHorizontal(lipgloss.Top, pageBit, pad)
 }
 
 func trunc(s string, n int) string {
