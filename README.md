@@ -26,8 +26,8 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 
 | Key | Action |
 | --- | --- |
-| Alt+← / Alt+→ | Column page (shift one column; split teal/yellow when spanning pages) |
-| Ctrl+← / Ctrl+→ | Full page (n columns; one background) |
+| Alt+← / Alt+→ | Column page |
+| F7 / F8 | Full page (Ctrl+arrows stay with OMP) |
 | Tab / Shift+Tab | Cycle cells (everything else goes into the focused OMP) |
 | Alt+1–9 | Jump to cell |
 | F1 / F2 | Switch hub |

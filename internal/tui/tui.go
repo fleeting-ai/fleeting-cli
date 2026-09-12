@@ -138,9 +138,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.colOff = clamp(m.colOff-1, 0, m.maxOff())
 	case "alt+right":
 		m.colOff = clamp(m.colOff+1, 0, m.maxOff())
-	case "ctrl+left", "alt+pgup":
+	case "f7", "shift+alt+left":
 		m.colOff = clamp(m.colOff-m.grid, 0, m.maxOff())
-	case "ctrl+right", "alt+pgdown":
+	case "f8", "shift+alt+right":
 		m.colOff = clamp(m.colOff+m.grid, 0, m.maxOff())
 	case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
 		m.focus = int(s[len(s)-1] - '1')
@@ -170,22 +170,50 @@ func (m Model) paneSize() (cols, rows int) {
 	if n < 1 {
 		n = 3
 	}
+	_, gridH := m.gridBox()
+	_, _, cols, rows = cellGeom(m.width, gridH, n)
+	return cols, rows
+}
+
+func (m Model) gridBox() (w, h int) {
 	barH, opH := 3, 6
-	gridH := m.height - barH - opH
-	if gridH < 8 {
-		gridH = 8
+	h = m.height - barH - opH
+	if h < 10 {
+		h = 10
 	}
-	cellW := m.width / n
-	cellH := gridH / n
-	cols = cellW - 2
-	rows = cellH - 3
+	return m.width, h
+}
+
+const (
+	outerBorder = 2
+	gutterSize  = 1
+	cellBorder  = 2
+	titleRows   = 1
+)
+
+func cellGeom(termW, gridH, n int) (cellW, cellH, cols, rows int) {
+	if n < 1 {
+		n = 3
+	}
+	availW := termW - outerBorder - gutterSize*(n+1)
+	availH := gridH - outerBorder - gutterSize*(n+1)
+	cellW = availW / n
+	cellH = availH / n
+	if cellW < 12 {
+		cellW = 12
+	}
+	if cellH < 6 {
+		cellH = 6
+	}
+	cols = cellW - cellBorder
+	rows = cellH - cellBorder - titleRows
 	if cols < 8 {
 		cols = 8
 	}
 	if rows < 4 {
 		rows = 4
 	}
-	return cols, rows
+	return cellW, cellH, cols, rows
 }
 
 func (m Model) maxOff() int {
@@ -260,7 +288,8 @@ func (m Model) hubPages() (lo, hi int) {
 }
 
 func pageColor(page int) lipgloss.Color {
-	palette := []string{"#0D9488", "#EAB308", "#A855F7", "#F97316", "#38BDF8", "#F472B6"}
+	// 256-color indexes so PuTTY shows them (truecolor hex often stays gray).
+	palette := []string{"36", "220", "135", "208", "45", "213"}
 	if page < 0 {
 		page = 0
 	}
@@ -274,8 +303,8 @@ func (m Model) View() string {
 	barH := 3
 	opH := 6
 	gridH := m.height - barH - opH
-	if gridH < 8 {
-		gridH = 8
+	if gridH < 10 {
+		gridH = 10
 	}
 	grid := m.renderGrid(m.width, gridH)
 	op := m.renderOperator(m.width, opH)
@@ -313,36 +342,59 @@ func (m Model) renderOperator(w, h int) string {
 
 func (m Model) renderGrid(w, h int) string {
 	n := m.grid
-	cellW := w / n
-	if cellW < 12 {
-		cellW = 12
-	}
-	cellH := h / n
-	if cellH < 4 {
-		cellH = 4
-	}
+	cellW, cellH, _, _ := cellGeom(w, h, n)
 	pageSize := n * n
+	gutterStyle := func(page int, height int) string {
+		if height < 1 {
+			height = 1
+		}
+		line := strings.Repeat(" ", gutterSize)
+		lines := make([]string, height)
+		for i := range lines {
+			lines[i] = line
+		}
+		return lipgloss.NewStyle().Background(pageColor(page)).Render(strings.Join(lines, "\n"))
+	}
 	colViews := make([]string, 0, n)
+	var colH int
 	for c := 0; c < n; c++ {
 		rows := make([]string, 0, n)
 		colPage := pageOf(globalIndex(m.colOff, n, c, 0), pageSize)
-		bg := pageColor(colPage)
 		for r := 0; r < n; r++ {
 			vis := r*n + c
 			gidx := globalIndex(m.colOff, n, c, r)
 			pg := pageOf(gidx, pageSize)
 			rows = append(rows, cellView(cellW, cellH, gidx, m.snapAt(gidx), vis == m.focus, pageColor(pg)))
+			if r+1 < n {
+				rows = append(rows, lipgloss.NewStyle().Background(pageColor(pg)).Render(strings.Repeat(" ", cellW)))
+			}
 		}
 		stack := lipgloss.JoinVertical(lipgloss.Left, rows...)
-		pad := lipgloss.NewStyle().Background(bg).Padding(0, 1)
-		colViews = append(colViews, pad.Render(stack))
+		colH = lipgloss.Height(stack)
+		colViews = append(colViews, stack)
+		_ = colPage
 	}
-	inner := lipgloss.JoinHorizontal(lipgloss.Top, colViews...)
+	var parts []string
 	lo, hi := m.hubPages()
+	parts = append(parts, gutterStyle(lo, colH))
+	for c, col := range colViews {
+		colPage := pageOf(globalIndex(m.colOff, n, c, 0), pageSize)
+		parts = append(parts, col)
+		next := colPage
+		if c+1 < n {
+			next = pageOf(globalIndex(m.colOff, n, c+1, 0), pageSize)
+		}
+		parts = append(parts, gutterStyle(next, colH))
+	}
+	inner := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 	outer := lipgloss.NewStyle().
 		Border(lipgloss.ThickBorder()).
 		BorderForeground(pageColor(lo)).
-		Background(pageColor(lo))
+		Background(pageColor(lo)).
+		Width(w).
+		MaxWidth(w).
+		Height(h).
+		MaxHeight(h)
 	if lo != hi {
 		outer = outer.BorderRightForeground(pageColor(hi)).BorderBottomForeground(pageColor(hi))
 	}
@@ -354,9 +406,23 @@ func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color
 	if focus {
 		fg = lipgloss.Color("15")
 	}
-	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(fg)
+	innerW := w - cellBorder
+	innerH := h - cellBorder
+	if innerW < 4 {
+		innerW = 4
+	}
+	if innerH < 3 {
+		innerH = 3
+	}
+	box := lipgloss.NewStyle().
+		Width(innerW).
+		MaxWidth(innerW).
+		Height(innerH).
+		MaxHeight(innerH).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(fg)
 	if s == nil {
-		return box.Width(w - 4).Height(h - 2).Render(fmt.Sprintf("%d  —", idx+1))
+		return box.Render(fmt.Sprintf("%d  —", idx+1))
 	}
 	dot := statusDot(s.Status)
 	title := fmt.Sprintf("%s %s %s", s.Name, dot, s.Lane)
@@ -387,7 +453,7 @@ func (m Model) renderBar(w int) string {
 	pageBit := lipgloss.NewStyle().Background(pageColor(lo)).Foreground(lipgloss.Color("16")).Bold(true).Padding(0, 1).Render(label)
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  alt←/→ col  ctrl←/→ page  tab cells  F1/F2 hub  F3/F4 grid  ctrl+q", m.grid, m.grid, focus)
+	line := fmt.Sprintf(" %dx%d  focus=%s  alt←/→ col  F7/F8 page  tab  F3/F4 grid  ctrl+q", m.grid, m.grid, focus)
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {
