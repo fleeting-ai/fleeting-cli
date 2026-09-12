@@ -29,7 +29,8 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | Alt+← / Alt+→ | Column page |
 | F7 / F8 | Full page (Ctrl+arrows stay with OMP) |
 | Tab / Shift+Tab | Cycle cells (everything else goes into the focused OMP) |
-| Alt+1–9 | Jump to cell |
+| Alt+1–9 | Phone pad (top-left 3×3): A1 B1 C1 / A2 B2 C2 / A3 B3 C3 |
+| Ctrl+G | Jump: type `D4` or `16`, Enter |
 | F1 / F2 | Switch hub |
 | F3 / F4 | Grid 3×3 … 6×6 |
 | Ctrl+M | Message along an allowed peer edge |

@@ -28,6 +28,7 @@ type Model struct {
 	msgTo   string
 	msgBody string
 	mode    string
+	gotoBuf string
 	status  string
 	lastErr string
 }
@@ -69,6 +70,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.mode == "goto" {
+		switch msg.Type {
+		case tea.KeyEsc:
+			m.mode = ""
+			m.gotoBuf = ""
+		case tea.KeyEnter:
+			if vis, ok := parseGoto(m.gotoBuf, m.grid); ok {
+				m.focus = vis
+				m.lastErr = ""
+				m.status = visAddr(vis, m.grid)
+			} else {
+				m.lastErr = "goto " + m.gotoBuf
+			}
+			m.mode = ""
+			m.gotoBuf = ""
+		case tea.KeyBackspace:
+			if len(m.gotoBuf) > 0 {
+				m.gotoBuf = m.gotoBuf[:len(m.gotoBuf)-1]
+			}
+		default:
+			if msg.Type == tea.KeyRunes {
+				m.gotoBuf += string(msg.Runes)
+			}
+		}
+		return m, nil
+	}
 	if m.mode == "msg" {
 		switch msg.Type {
 		case tea.KeyEsc:
@@ -144,8 +171,11 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.colOff = clamp(m.colOff-m.grid, 0, m.maxOff())
 	case "f8", "shift+alt+right":
 		m.colOff = clamp(m.colOff+m.grid, 0, m.maxOff())
+	case "ctrl+g":
+		m.mode = "goto"
+		m.gotoBuf = ""
 	case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
-		m.focus = int(s[len(s)-1] - '1')
+		m.focus = keypadFocus(int(s[len(s)-1]-'0'), m.grid)
 	default:
 		if name := m.focusedName(); name != "" {
 			if b := encodeKey(msg); len(b) > 0 {
@@ -408,7 +438,7 @@ func cellView(w, h, vis int, s *listen.Snapshot, focus bool, page lipgloss.Color
 	if innerH < 3 {
 		innerH = 3
 	}
-	key := vis + 1
+	addr := visAddr(vis, n)
 	box := lipgloss.NewStyle().
 		Width(innerW).
 		MaxWidth(innerW).
@@ -419,9 +449,9 @@ func cellView(w, h, vis int, s *listen.Snapshot, focus bool, page lipgloss.Color
 		BorderBottom(row == n-1).
 		BorderForeground(fg)
 	if s == nil {
-		return box.Render(fmt.Sprintf("%d  —", key))
+		return box.Render(addr + "  —")
 	}
-	title := fmt.Sprintf("%d %s %s %s", key, s.Name, statusDot(s.Status), s.Lane)
+	title := fmt.Sprintf("%s %s %s %s", addr, s.Name, statusDot(s.Status), s.Lane)
 	if s.Hub {
 		title += " HUB"
 	}
@@ -449,11 +479,14 @@ func (m Model) renderBar(w int) string {
 	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  alt←/→ col  F7/F8 page  tab  F3/F4 grid  ctrl+q", m.grid, m.grid, focus)
+	line := fmt.Sprintf(" %dx%d  focus=%s  alt←/→ col  F7/F8 page  tab  ctrl+g goto  ctrl+q", m.grid, m.grid, focus)
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {
 		line += "  " + m.status
+	}
+	if m.mode == "goto" {
+		line = fmt.Sprintf(" goto %s_  (D4 or 16, Enter)", m.gotoBuf)
 	}
 	if m.mode == "msg" {
 		line = fmt.Sprintf(" msg %s → %s: %s", m.focusedName(), m.msgTo, m.msgBody)
