@@ -50,10 +50,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		c, r := m.paneSize()
+		m.srv.Resize(c, r)
 	case tickMsg:
 		m.snaps = m.srv.Snapshots()
 		sort.Slice(m.snaps, func(i, j int) bool { return m.snaps[i].Name < m.snaps[j].Name })
-		return m, tea.Tick(time.Millisecond*200, func(t time.Time) tea.Msg { return tickMsg(t) })
+		return m, tea.Tick(time.Millisecond*120, func(t time.Time) tea.Msg { return tickMsg(t) })
 	case tea.KeyMsg:
 		return m.key(msg)
 	}
@@ -89,40 +91,52 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.String() {
-	case "q", "ctrl+c":
+	s := msg.String()
+	switch s {
+	case "ctrl+q", "ctrl+c":
 		return m, tea.Quit
 	case "tab":
 		m.focus++
 	case "shift+tab":
 		m.focus--
-	case "[":
+	case "alt+[", "f1":
 		if m.hubIdx > 0 {
 			m.hubIdx--
 		}
 		m.focus = 0
-	case "]":
+	case "alt+]", "f2":
 		if m.hubIdx+1 < len(m.cfg.Fleets) {
 			m.hubIdx++
 		}
 		m.focus = 0
-	case "+":
-		if m.grid < 6 {
-			m.grid++
-		}
-	case "-":
+	case "f3":
 		if m.grid > 3 {
 			m.grid--
 		}
-	case "m":
+		c, r := m.paneSize()
+		m.srv.Resize(c, r)
+	case "f4":
+		if m.grid < 6 {
+			m.grid++
+		}
+		c, r := m.paneSize()
+		m.srv.Resize(c, r)
+	case "ctrl+m":
 		m.mode = "msg"
 		m.msgTo = ""
 		if se := m.focused(); se != nil && len(se.Peers) > 0 {
 			m.msgTo = se.Peers[0]
 		}
 		m.msgBody = ""
-	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-		m.focus = int(msg.String()[0] - '1')
+	case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
+		m.focus = int(s[len(s)-1] - '1')
+	default:
+		if name := m.focusedName(); name != "" {
+			if b := encodeKey(msg); len(b) > 0 {
+				_ = m.srv.Write(name, b)
+			}
+		}
+		return m, nil
 	}
 	cells := m.grid * m.grid
 	if cells > 0 {
@@ -132,6 +146,32 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = m.focus % cells
 	}
 	return m, nil
+}
+
+func (m Model) paneSize() (cols, rows int) {
+	if m.width == 0 || m.height == 0 {
+		return 80, 24
+	}
+	n := m.grid
+	if n < 1 {
+		n = 3
+	}
+	barH, opH := 3, 6
+	gridH := m.height - barH - opH
+	if gridH < 8 {
+		gridH = 8
+	}
+	cellW := m.width / n
+	cellH := gridH / n
+	cols = cellW - 2
+	rows = cellH - 3
+	if cols < 8 {
+		cols = 8
+	}
+	if rows < 4 {
+		rows = 4
+	}
+	return cols, rows
 }
 
 func (m Model) focused() *listen.Snapshot {
@@ -246,12 +286,38 @@ func cellView(w, h, idx int, s *listen.Snapshot, focus bool) string {
 		return st.Render(fmt.Sprintf("%d  —", idx+1))
 	}
 	dot := statusDot(s.Status)
-	title := fmt.Sprintf("%s %s  %s  %s", s.Name, dot, s.Lane, s.Status)
+	title := fmt.Sprintf("%s %s %s", s.Name, dot, s.Lane)
 	if s.Hub {
-		title += "  HUB"
+		title += " HUB"
 	}
-	body := strings.TrimSpace(s.Screen)
+	innerW, innerH := w-2, h-3
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
+	body := clipScreen(s.Screen, innerW, innerH)
 	return st.Render(title + "\n" + body)
+}
+
+func clipScreen(s string, cols, rows int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > rows {
+		lines = lines[:rows]
+	}
+	for len(lines) < rows {
+		lines = append(lines, "")
+	}
+	for i, ln := range lines {
+		runes := []rune(ln)
+		if len(runes) > cols {
+			lines[i] = string(runes[:cols])
+		} else if len(runes) < cols {
+			lines[i] = ln + strings.Repeat(" ", cols-len(runes))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func statusDot(st string) string {
@@ -272,7 +338,7 @@ func statusDot(st string) string {
 func (m Model) renderBar(w int) string {
 	st := lipgloss.NewStyle().Width(w).Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  tab/1-9  [ ] hub  +/- grid  m msg  q quit", m.grid, m.grid, focus)
+	line := fmt.Sprintf(" %dx%d  focus=%s  tab cells  alt+1-9  F1/F2 hub  F3/F4 grid  ctrl+m msg  ctrl+q quit", m.grid, m.grid, focus)
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {

@@ -1,54 +1,39 @@
 # Fleeting
 
-One CLI pane of glass for many agent TUIs (Claude CLI, Codex, Antigravity, Pi, …). Live PTY cells in a Brady Bunch grid. Default-deny hub-and-spoke. Hiro (judge) and Risa (foreman) sit at 30,000 feet over every fleet you control.
+One CLI pane of glass for many Oh My Pi (and later other) agent TUIs. Live PTY cells in a Brady Bunch grid. Default-deny hub-and-spoke. Hiro and Risa sit at 30,000 feet over every fleet you control.
 
-Local first. A Fleeting listener owns the sessions — not `tmux attach`. Remote TCP is the next slice.
+Each occupied cell runs `omp --alias <4-letter-name>` so the familiar OMP layout (todos, bottom bar) is the cell. Empty cells stay empty. Resize the outer window and each inner PTY is SIGWINCH’d to match.
 
-## Run (WSL, Linux, macOS)
+## Oh My Pi (required for cells)
 
-Needs Go 1.22+ and a terminal that can run TUIs.
-
-```bash
-cd fleeting
-go run ./cmd/fleeting onboard   # writes ~/.fleeting/fleet.yaml
-go run ./cmd/fleeting up        # listener + grid
-```
-
-Or:
+Ubuntu/WSL:
 
 ```bash
-go build -o fleeting ./cmd/fleeting
-./fleeting onboard
-./fleeting up
+curl -fsSL https://omp.sh/install | sh
+# or: bun install -g @oh-my-pi/pi-coding-agent
+command -v omp && omp --help | head
 ```
 
-Resume a session id:
+Then from this repo (rebuild if you already ran `up`):
 
 ```bash
-./fleeting r <guid> --go
+go run ./cmd/fleeting up
 ```
 
-Declare work for Hiro (files + md5 + intent):
-
-```bash
-./fleeting declare --agent nova --intent "fix grid focus" README.md
-```
+Each agent’s session dir is `~/.fleeting/sessions/<name>`. Persona is `--alias nova` (etc). If `omp` is missing, the cell shows the install line instead of crashing the grid.
 
 ## Keys
 
 | Key | Action |
 | --- | --- |
-| Tab / Shift+Tab | Cycle cells |
-| 1–9 | Jump to cell |
-| [ ] | Switch hub (fleet) |
-| + / - | Grid 3×3 … 6×6 |
-| m | Message along an allowed peer edge |
-| q | Quit |
-
-Bottom bar is the control strip. Top band is Hiro/Risa (counts + recent declarations).
+| Tab / Shift+Tab | Cycle cells (everything else goes into the focused OMP) |
+| Alt+1–9 | Jump to cell |
+| F1 / F2 | Switch hub |
+| F3 / F4 | Grid 3×3 … 6×6 |
+| Ctrl+M | Message along an allowed peer edge |
+| Ctrl+Q | Quit Fleeting |
 
 ## Config
 
-Dockerfile-style YAML at `~/.fleeting/fleet.yaml` (or `$FLEETING_CONFIG`). Agents have 4-letter names, a lane, optional `hub: true`, and an explicit `peers` list (**default deny**). Set `cmd:` to the real harness when you have one; stubs loop a status line for the demo.
+`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`.
 
-Listener socket: `~/.fleeting/fleeting.sock`. Same JSON protocol is the extension point for remote hosts.

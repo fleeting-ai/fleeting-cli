@@ -1,6 +1,7 @@
 package listen
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/hinshun/vt10x"
 	"github.com/richard-ginsberg/fleeting/internal/config"
 	"github.com/richard-ginsberg/fleeting/internal/presence"
 	"github.com/richard-ginsberg/fleeting/internal/spool"
@@ -34,11 +36,13 @@ type Session struct {
 	GUID    string
 	Cmd     *exec.Cmd
 	Pty     *os.File
+	VT      vt10x.Terminal
 	mu      sync.Mutex
-	buf     []byte
 	last    time.Time
 	alive   bool
 	err     string
+	cols    uint16
+	rows    uint16
 }
 
 type Snapshot struct {
@@ -105,21 +109,28 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 		"FLEETING_ROLE="+a.Role,
 		"FLEETING_FLEET="+fleetID,
 		"FLEETING_GUID="+guid,
+		"TERM=xterm-256color",
+		"COLORTERM=truecolor",
 	)
+	_ = os.MkdirAll(filepath.Join(config.Dir(), "sessions", a.Name), 0o755)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		return fmt.Errorf("%s: %w", a.Name, err)
 	}
-	_ = pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80})
+	const cols, rows = 80, 24
+	_ = pty.Setsize(ptmx, &pty.Winsize{Rows: rows, Cols: cols})
+	vt := vt10x.New(vt10x.WithSize(cols, rows), vt10x.WithWriter(ptmx))
 	se := &Session{
 		Agent:   a,
 		FleetID: fleetID,
 		GUID:    guid,
 		Cmd:     cmd,
 		Pty:     ptmx,
+		VT:      vt,
 		alive:   true,
 		last:    time.Now(),
-		buf:     make([]byte, 0, 8192),
+		cols:    cols,
+		rows:    rows,
 	}
 	s.mu.Lock()
 	s.sess[a.Name] = se
@@ -130,21 +141,37 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 }
 
 func (se *Session) readLoop() {
-	buf := make([]byte, 4096)
+	br := bufio.NewReader(se.Pty)
 	for {
-		n, err := se.Pty.Read(buf)
-		if n > 0 {
-			se.mu.Lock()
-			se.buf = append(se.buf, buf[:n]...)
-			if len(se.buf) > 32*1024 {
-				se.buf = se.buf[len(se.buf)-16*1024:]
-			}
-			se.last = time.Now()
-			se.mu.Unlock()
-		}
-		if err != nil {
+		if err := se.VT.Parse(br); err != nil {
 			return
 		}
+		se.mu.Lock()
+		se.last = time.Now()
+		se.mu.Unlock()
+	}
+}
+
+func (s *Server) Resize(cols, rows int) {
+	if cols < 8 {
+		cols = 8
+	}
+	if rows < 4 {
+		rows = 4
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, se := range s.sess {
+		if se.Pty == nil || se.VT == nil {
+			continue
+		}
+		c, r := uint16(cols), uint16(rows)
+		if se.cols == c && se.rows == r {
+			continue
+		}
+		se.cols, se.rows = c, r
+		se.VT.Resize(cols, rows)
+		_ = pty.Setsize(se.Pty, &pty.Winsize{Rows: r, Cols: c})
 	}
 }
 
@@ -177,7 +204,10 @@ func (s *Server) Snapshots() []Snapshot {
 	out := make([]Snapshot, 0, len(s.sess))
 	for _, se := range s.sess {
 		se.mu.Lock()
-		screen := tailScreen(se.buf, 12)
+		screen := ""
+		if se.VT != nil {
+			screen = se.VT.String()
+		}
 		st := presence.Of(se.alive, se.last, screen)
 		out = append(out, Snapshot{
 			Name:   se.Agent.Name,
@@ -196,26 +226,6 @@ func (s *Server) Snapshots() []Snapshot {
 		se.mu.Unlock()
 	}
 	return out
-}
-
-func tailScreen(b []byte, lines int) string {
-	s := string(b)
-	// keep last N lines
-	n := 0
-	i := len(s)
-	for i > 0 && n < lines {
-		i--
-		if s[i] == '\n' {
-			n++
-		}
-	}
-	if i < 0 {
-		i = 0
-	}
-	if n >= lines && i+1 < len(s) {
-		return s[i+1:]
-	}
-	return s
 }
 
 func (s *Server) Write(name string, data []byte) error {
