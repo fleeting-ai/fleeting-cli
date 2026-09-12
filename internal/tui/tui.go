@@ -361,7 +361,7 @@ func (m Model) renderGrid(w, h int) string {
 			vis := r*n + c
 			gidx := globalIndex(m.colOff, n, c, r)
 			pg := pageOf(gidx, pageSize)
-			rows = append(rows, cellView(cellW, cellH, gidx, m.snapAt(gidx), vis == m.focus, pageColor(pg), r, n))
+			rows = append(rows, cellView(cellW, cellH, vis, m.snapAt(gidx), vis == m.focus, pageColor(pg), r, n))
 			if r+1 < n {
 				rows = append(rows, hairlineANSI(pageANSI(pg), cellW))
 			}
@@ -392,7 +392,7 @@ func (m Model) renderGrid(w, h int) string {
 	return frameANSI(inner, w, lo, hi, splitAt)
 }
 
-func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color, row, n int) string {
+func cellView(w, h, vis int, s *listen.Snapshot, focus bool, page lipgloss.Color, row, n int) string {
 	fg := page
 	if focus {
 		fg = lipgloss.Color("15")
@@ -408,21 +408,20 @@ func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color
 	if innerH < 3 {
 		innerH = 3
 	}
-	br := lipgloss.NormalBorder()
+	key := vis + 1
 	box := lipgloss.NewStyle().
 		Width(innerW).
 		MaxWidth(innerW).
 		Height(innerH).
 		MaxHeight(innerH).
-		Border(br).
+		Border(lipgloss.NormalBorder()).
 		BorderTop(row == 0).
 		BorderBottom(row == n-1).
 		BorderForeground(fg)
 	if s == nil {
-		return box.Render(fmt.Sprintf("%d  —", idx+1))
+		return box.Render(fmt.Sprintf("%d  —", key))
 	}
-	dot := statusDot(s.Status)
-	title := fmt.Sprintf("%s %s %s", s.Name, dot, s.Lane)
+	title := fmt.Sprintf("%d %s %s %s", key, s.Name, statusDot(s.Status), s.Lane)
 	if s.Hub {
 		title += " HUB"
 	}
