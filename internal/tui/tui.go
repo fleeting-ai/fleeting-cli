@@ -395,12 +395,9 @@ func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color
 		fg = lipgloss.Color("15")
 	}
 	innerW := w - cellBorder
-	innerH := h - cellBorder
-	if row > 0 {
-		innerH++ // no extra top border row
-	}
-	if row < n-1 {
-		innerH++
+	innerH := h - 1 // one hairline (bottom); first row also has a top
+	if row == 0 {
+		innerH = h - cellBorder
 	}
 	if innerW < 4 {
 		innerW = 4
@@ -416,7 +413,7 @@ func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color
 		MaxHeight(innerH).
 		Border(br).
 		BorderTop(row == 0).
-		BorderBottom(row == n-1).
+		BorderBottom(true).
 		BorderForeground(fg)
 	if s == nil {
 		return box.Render(fmt.Sprintf("%d  —", idx+1))
