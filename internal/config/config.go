@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -22,14 +23,14 @@ type Fleet struct {
 }
 
 type Agent struct {
-	Name        string   `yaml:"name"`
-	Role        string   `yaml:"role"`
-	Lane        string   `yaml:"lane"`
-	Harness     string   `yaml:"harness"`
-	Cmd         []string `yaml:"cmd"`
-	Hub         bool     `yaml:"hub"`
-	Peers       []string `yaml:"peers"`
-	ResumeGUID  string   `yaml:"resume"`
+	Name       string   `yaml:"name"`
+	Role       string   `yaml:"role"`
+	Lane       string   `yaml:"lane"`
+	Harness    string   `yaml:"harness"`
+	Cmd        []string `yaml:"cmd"`
+	Hub        bool     `yaml:"hub"`
+	Peers      []string `yaml:"peers"`
+	ResumeGUID string   `yaml:"resume"`
 }
 
 func Dir() string {
@@ -96,6 +97,9 @@ func (f *File) Validate() error {
 			}
 			names[n] = true
 			a.Name = n
+			if a.Harness == "" {
+				a.Harness = "omp"
+			}
 			if len(a.Cmd) == 0 {
 				a.Cmd = DefaultCmd(a)
 			}
@@ -104,22 +108,26 @@ func (f *File) Validate() error {
 	return nil
 }
 
+// DefaultCmd launches Oh My Pi as that persona (--alias is the 4-letter name).
 func DefaultCmd(a *Agent) []string {
-	label := a.Name
-	if a.Role != "" {
-		label = a.Name + "/" + a.Role
+	session := filepath.Join(Dir(), "sessions", a.Name)
+	omp, err := exec.LookPath("omp")
+	if err != nil {
+		msg := "omp not found on PATH. Install Oh My Pi, then restart fleeting up:\\n  curl -fsSL https://omp.sh/install | sh\\n"
+		return []string{"bash", "-lc", "printf '%b' " + shellQuote(msg) + "; echo persona=" + a.Name + "; sleep 3600"}
 	}
-	body := fmt.Sprintf(
-		`printf '\033[1m%s\033[0m lane=%s harness=%s\n'; date '+%%H:%%M:%%S'; echo 'stub harness — set cmd: in fleet.yaml'; sleep 2`,
-		label, a.Lane, a.Harness,
-	)
-	return []string{"bash", "-lc", "while true; do " + body + "; done"}
+	return []string{omp, "--alias", a.Name, "--session-dir", session}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func Example() string {
-	return `# Fleeting fleet file (Dockerfile-style: declare the image of the team)
+	return `# Fleeting fleet file
+# Empty cmd: → Oh My Pi with --alias <name> (install: curl -fsSL https://omp.sh/install | sh)
 operator: richard
-grid: 3  # 3..6 Brady Bunch cells on a side
+grid: 3
 
 fleets:
   - id: local-core
@@ -128,34 +136,34 @@ fleets:
       - name: nova
         role: worker
         lane: ux
-        harness: pi
+        harness: omp
         hub: false
-        peers: [risa]          # default deny; only these names can be addressed
+        peers: [risa]
       - name: bolt
         role: worker
         lane: infra
-        harness: claude
+        harness: omp
         peers: [risa]
       - name: kite
         role: worker
         lane: module
-        harness: codex
+        harness: omp
         peers: [risa]
       - name: veil
         role: worker
         lane: security
-        harness: antigravity
+        harness: omp
         peers: [hiro, risa]
       - name: hiro
         role: judge
         lane: review
-        harness: fleeting
+        harness: omp
         hub: true
         peers: [risa, nova, bolt, kite, veil]
       - name: risa
         role: foreman
         lane: pace
-        harness: fleeting
+        harness: omp
         hub: true
         peers: [hiro, nova, bolt, kite, veil]
 `

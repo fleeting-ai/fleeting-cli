@@ -1,6 +1,6 @@
-# Fleeting fleet file (Dockerfile-style: declare the image of the team)
+# Empty cmd: launches Oh My Pi as --alias <name>
 operator: richard
-grid: 3  # 3..6 Brady Bunch cells on a side
+grid: 3
 
 fleets:
   - id: local-core
@@ -9,33 +9,32 @@ fleets:
       - name: nova
         role: worker
         lane: ux
-        harness: pi
-        hub: false
+        harness: omp
         peers: [risa]
       - name: bolt
         role: worker
         lane: infra
-        harness: claude
+        harness: omp
         peers: [risa]
       - name: kite
         role: worker
         lane: module
-        harness: codex
+        harness: omp
         peers: [risa]
       - name: veil
         role: worker
         lane: security
-        harness: antigravity
+        harness: omp
         peers: [hiro, risa]
       - name: hiro
         role: judge
         lane: review
-        harness: fleeting
+        harness: omp
         hub: true
         peers: [risa, nova, bolt, kite, veil]
       - name: risa
         role: foreman
         lane: pace
-        harness: fleeting
+        harness: omp
         hub: true
         peers: [hiro, nova, bolt, kite, veil]
