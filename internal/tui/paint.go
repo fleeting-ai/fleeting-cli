@@ -38,45 +38,51 @@ func fillANSI(color, w, h int) string {
 	return strings.Join(out, "\n")
 }
 
-func frameANSI(inner string, w, h, loPage, hiPage int) string {
+func frameANSI(inner string, w, loPage, hiPage, splitAt int) string {
 	if w < 4 {
 		w = 4
 	}
-	if h < 3 {
-		h = 3
-	}
 	innerW := w - 2
-	innerH := h - 2
 	lines := strings.Split(inner, "\n")
-	for len(lines) < innerH {
-		lines = append(lines, "")
-	}
-	if len(lines) > innerH {
-		lines = lines[:innerH]
+	if len(lines) < 1 {
+		lines = []string{""}
 	}
 	for i, ln := range lines {
 		lines[i] = padVisible(ln, innerW)
 	}
 	lo, hi := pageANSI(loPage), pageANSI(hiPage)
+	if splitAt < 0 {
+		splitAt = 0
+	}
+	if splitAt > innerW {
+		splitAt = innerW
+	}
 	var top, bot string
-	if loPage != hiPage {
-		half := innerW / 2
-		top = ansiFG(lo) + ansiBG(lo) + "┌" + strings.Repeat("─", half) +
-			ansiFG(hi) + ansiBG(hi) + strings.Repeat("─", innerW-half) + "┐" + ansiReset
-		bot = ansiFG(lo) + ansiBG(lo) + "└" + strings.Repeat("─", half) +
-			ansiFG(hi) + ansiBG(hi) + strings.Repeat("─", innerW-half) + "┘" + ansiReset
+	if loPage != hiPage && splitAt > 0 && splitAt < innerW {
+		top = ansiFG(lo) + ansiBG(lo) + "┌" + strings.Repeat("─", splitAt) +
+			ansiFG(hi) + ansiBG(hi) + strings.Repeat("─", innerW-splitAt) + "┐" + ansiReset
+		bot = ansiFG(lo) + ansiBG(lo) + "└" + strings.Repeat("─", splitAt) +
+			ansiFG(hi) + ansiBG(hi) + strings.Repeat("─", innerW-splitAt) + "┘" + ansiReset
 	} else {
+		c := lo
+		if loPage == hiPage {
+			c = lo
+		}
 		bar := strings.Repeat("─", innerW)
-		top = ansiFG(lo) + ansiBG(lo) + "┌" + bar + "┐" + ansiReset
-		bot = ansiFG(lo) + ansiBG(lo) + "└" + bar + "┘" + ansiReset
+		top = ansiFG(c) + ansiBG(c) + "┌" + bar + "┐" + ansiReset
+		bot = ansiFG(c) + ansiBG(c) + "└" + bar + "┘" + ansiReset
 	}
 	var b strings.Builder
 	b.WriteString(top)
 	b.WriteByte('\n')
 	for _, ln := range lines {
-		b.WriteString(ansiFG(lo) + ansiBG(lo) + "│" + ansiReset)
+		left, right := lo, hi
+		if loPage == hiPage {
+			right = lo
+		}
+		b.WriteString(ansiFG(left) + ansiBG(left) + "│" + ansiReset)
 		b.WriteString(ln)
-		b.WriteString(ansiFG(hi) + ansiBG(hi) + "│" + ansiReset)
+		b.WriteString(ansiFG(right) + ansiBG(right) + "│" + ansiReset)
 		b.WriteByte('\n')
 	}
 	b.WriteString(bot)

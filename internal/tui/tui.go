@@ -188,7 +188,7 @@ func (m Model) gridBox() (w, h int) {
 
 const (
 	outerBorder = 2
-	gutterSize  = 2
+	gutterSize  = 1
 	cellBorder  = 2
 	titleRows   = 1
 )
@@ -198,7 +198,7 @@ func cellGeom(termW, gridH, n int) (cellW, cellH, cols, rows int) {
 		n = 3
 	}
 	availW := termW - outerBorder - gutterSize*(n+1)
-	availH := gridH - outerBorder - gutterSize*(n+1)
+	availH := gridH - outerBorder
 	if availW < n {
 		availW = n
 	}
@@ -214,7 +214,7 @@ func cellGeom(termW, gridH, n int) (cellW, cellH, cols, rows int) {
 		cellH = 3
 	}
 	cols = cellW - cellBorder
-	rows = cellH - cellBorder - titleRows
+	rows = cellH - 1 - titleRows
 	if cols < 8 {
 		cols = 8
 	}
@@ -352,6 +352,7 @@ func (m Model) renderGrid(w, h int) string {
 	n := m.grid
 	cellW, cellH, _, _ := cellGeom(w, h, n)
 	pageSize := n * n
+	lo, hi := m.hubPages()
 	colViews := make([]string, 0, n)
 	var colH int
 	for c := 0; c < n; c++ {
@@ -360,50 +361,62 @@ func (m Model) renderGrid(w, h int) string {
 			vis := r*n + c
 			gidx := globalIndex(m.colOff, n, c, r)
 			pg := pageOf(gidx, pageSize)
-			rows = append(rows, cellView(cellW, cellH, gidx, m.snapAt(gidx), vis == m.focus, pageColor(pg)))
-			if r+1 < n {
-				rows = append(rows, fillANSI(pageANSI(pg), cellW, gutterSize))
-			}
+			rows = append(rows, cellView(cellW, cellH, gidx, m.snapAt(gidx), vis == m.focus, pageColor(pg), r, n))
 		}
 		stack := lipgloss.JoinVertical(lipgloss.Left, rows...)
 		colH = lipgloss.Height(stack)
 		colViews = append(colViews, stack)
 	}
-	lo, hi := m.hubPages()
 	var parts []string
 	parts = append(parts, fillANSI(pageANSI(lo), gutterSize, colH))
+	splitAt := gutterSize
 	for c, col := range colViews {
 		colPage := pageOf(globalIndex(m.colOff, n, c, 0), pageSize)
 		parts = append(parts, col)
+		if colPage == lo {
+			splitAt += cellW
+		}
 		next := colPage
 		if c+1 < n {
 			next = pageOf(globalIndex(m.colOff, n, c+1, 0), pageSize)
 		}
 		parts = append(parts, fillANSI(pageANSI(next), gutterSize, colH))
+		if colPage == lo && next == lo {
+			splitAt += gutterSize
+		}
 	}
 	inner := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	return frameANSI(inner, w, h, lo, hi)
+	return frameANSI(inner, w, lo, hi, splitAt)
 }
 
-func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color) string {
+func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color, row, n int) string {
 	fg := page
 	if focus {
 		fg = lipgloss.Color("15")
 	}
 	innerW := w - cellBorder
 	innerH := h - cellBorder
+	if row > 0 {
+		innerH++ // no extra top border row
+	}
+	if row < n-1 {
+		innerH++
+	}
 	if innerW < 4 {
 		innerW = 4
 	}
 	if innerH < 3 {
 		innerH = 3
 	}
+	br := lipgloss.NormalBorder()
 	box := lipgloss.NewStyle().
 		Width(innerW).
 		MaxWidth(innerW).
 		Height(innerH).
 		MaxHeight(innerH).
-		Border(lipgloss.NormalBorder()).
+		Border(br).
+		BorderTop(row == 0).
+		BorderBottom(row == n-1).
 		BorderForeground(fg)
 	if s == nil {
 		return box.Render(fmt.Sprintf("%d  —", idx+1))
