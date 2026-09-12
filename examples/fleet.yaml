@@ -1,0 +1,41 @@
+# Fleeting fleet file (Dockerfile-style: declare the image of the team)
+operator: richard
+grid: 3  # 3..6 Brady Bunch cells on a side
+
+fleets:
+  - id: local-core
+    goal: land the first fleeting slice
+    agents:
+      - name: nova
+        role: worker
+        lane: ux
+        harness: pi
+        hub: false
+        peers: [risa]
+      - name: bolt
+        role: worker
+        lane: infra
+        harness: claude
+        peers: [risa]
+      - name: kite
+        role: worker
+        lane: module
+        harness: codex
+        peers: [risa]
+      - name: veil
+        role: worker
+        lane: security
+        harness: antigravity
+        peers: [hiro, risa]
+      - name: hiro
+        role: judge
+        lane: review
+        harness: fleeting
+        hub: true
+        peers: [risa, nova, bolt, kite, veil]
+      - name: risa
+        role: foreman
+        lane: pace
+        harness: fleeting
+        hub: true
+        peers: [hiro, nova, bolt, kite, veil]
