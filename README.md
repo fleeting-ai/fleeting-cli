@@ -32,7 +32,8 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | Alt+1–9 | Phone pad (top-left 3×3): A1 B1 C1 / A2 B2 C2 / A3 B3 C3 |
 | Ctrl+G | Jump: type `D4` or `16`, Enter |
 | F1 / F2 | Switch hub |
-| F3 / F4 | Grid 3×3 … 6×6 |
+| F3 | Shrink grid; at 3×3 zoom focus to 2×2 then 3×3 |
+| F4 | Unzoom, then grow grid |
 | Ctrl+M | Message along an allowed peer edge |
 | Ctrl+Q | Quit Fleeting |
 

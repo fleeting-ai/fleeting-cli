@@ -22,7 +22,8 @@ type Model struct {
 	grid    int
 	hubIdx  int
 	focus   int
-	colOff  int
+	zoomSpan int
+	colOff   int
 	snaps   []listen.Snapshot
 	byName  map[string]listen.Snapshot
 	msgTo   string
@@ -54,8 +55,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		c, r := m.paneSize()
-		m.srv.Resize(c, r)
+		m.applyPTYs(m.paneSize())
 	case tickMsg:
 		m.snaps = m.srv.Snapshots()
 		m.byName = make(map[string]listen.Snapshot, len(m.snaps))
@@ -145,16 +145,23 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f3":
 		if m.grid > 3 {
 			m.grid--
+			m.zoomSpan = 0
+		} else if m.zoomSpan == 0 {
+			m.zoomSpan = 2
+		} else if m.zoomSpan == 2 {
+			m.zoomSpan = 3
 		}
-		c, r := m.paneSize()
-		m.srv.Resize(c, r)
+		m.applyPTYs(m.paneSize())
 		m.colOff = clamp(m.colOff, 0, m.maxOff())
 	case "f4":
-		if m.grid < 6 {
+		if m.zoomSpan == 3 {
+			m.zoomSpan = 2
+		} else if m.zoomSpan == 2 {
+			m.zoomSpan = 0
+		} else if m.grid < 6 {
 			m.grid++
 		}
-		c, r := m.paneSize()
-		m.srv.Resize(c, r)
+		m.applyPTYs(m.paneSize())
 		m.colOff = clamp(m.colOff, 0, m.maxOff())
 	case "ctrl+m":
 		m.mode = "msg"
@@ -205,6 +212,17 @@ func (m Model) paneSize() (cols, rows int) {
 	_, gridH := m.gridBox()
 	_, _, cols, rows = cellGeom(m.width, gridH, n)
 	return cols, rows
+}
+
+func (m Model) applyPTYs(cols, rows int) {
+	m.srv.Resize(cols, rows)
+	if m.zoomSpan < 2 {
+		return
+	}
+	if s := m.focused(); s != nil {
+		span := m.zoomSpan
+		m.srv.ResizeSession(s.Name, cols*span+(span-1)*gutterSize, rows*span+(span-1))
+	}
 }
 
 func (m Model) gridBox() (w, h int) {
@@ -379,6 +397,9 @@ func (m Model) renderOperator(w, h int) string {
 }
 
 func (m Model) renderGrid(w, h int) string {
+	if m.zoomSpan >= 2 && m.grid == 3 {
+		return m.renderZoomed(w, h)
+	}
 	n := m.grid
 	cellW, cellH, _, _ := cellGeom(w, h, n)
 	pageSize := n * n
@@ -419,6 +440,92 @@ func (m Model) renderGrid(w, h int) string {
 		}
 	}
 	inner := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	return frameANSI(inner, w, lo, hi, splitAt)
+}
+
+func (m Model) renderZoomed(w, h int) string {
+	n := m.grid
+	span := m.zoomSpan
+	cellW, cellH, _, _ := cellGeom(w, h, n)
+	pageSize := n * n
+	lo, hi := m.hubPages()
+	fc := m.focus % n
+	fr := m.focus / n
+	c0, r0 := zoomOrigin(fc, fr, n, span)
+
+	small := func(c, r int) string {
+		vis := r*n + c
+		gidx := globalIndex(m.colOff, n, c, r)
+		pg := pageOf(gidx, pageSize)
+		return cellView(cellW, cellH, vis, m.snapAt(gidx), vis == m.focus, pageColor(pg), r, n)
+	}
+	stackSmall := func(c, r0, r1 int) string {
+		var rows []string
+		for r := r0; r < r1; r++ {
+			if r > r0 {
+				gidx := globalIndex(m.colOff, n, c, r)
+				rows = append(rows, hairlineANSI(pageANSI(pageOf(gidx, pageSize)), cellW))
+			}
+			rows = append(rows, small(c, r))
+		}
+		if len(rows) == 0 {
+			return ""
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	}
+
+	var bands []string
+	for r := 0; r < r0; r++ {
+		var rowParts []string
+		rowParts = append(rowParts, fillANSI(pageANSI(lo), gutterSize, cellH))
+		for c := 0; c < n; c++ {
+			rowParts = append(rowParts, small(c, r))
+			gidx := globalIndex(m.colOff, n, c, r)
+			rowParts = append(rowParts, fillANSI(pageANSI(pageOf(gidx, pageSize)), gutterSize, cellH))
+		}
+		bands = append(bands, lipgloss.JoinHorizontal(lipgloss.Top, rowParts...))
+		if r+1 < n {
+			bands = append(bands, hairlineANSI(pageANSI(lo), w-2))
+		}
+	}
+
+	bw := span*cellW + (span-1)*gutterSize
+	bh := span*cellH + (span-1)
+	fvis := fr*n + fc
+	fgidx := globalIndex(m.colOff, n, fc, fr)
+	fpg := pageOf(fgidx, pageSize)
+	big := cellView(bw, bh, fvis, m.snapAt(fgidx), true, pageColor(fpg), 0, 1)
+
+	var mid []string
+	mid = append(mid, fillANSI(pageANSI(lo), gutterSize, bh))
+	for c := 0; c < c0; c++ {
+		mid = append(mid, stackSmall(c, r0, r0+span))
+		mid = append(mid, fillANSI(pageANSI(pageOf(globalIndex(m.colOff, n, c, r0), pageSize)), gutterSize, bh))
+	}
+	mid = append(mid, big)
+	mid = append(mid, fillANSI(pageANSI(fpg), gutterSize, bh))
+	for c := c0 + span; c < n; c++ {
+		mid = append(mid, stackSmall(c, r0, r0+span))
+		mid = append(mid, fillANSI(pageANSI(pageOf(globalIndex(m.colOff, n, c, r0), pageSize)), gutterSize, bh))
+	}
+	bands = append(bands, lipgloss.JoinHorizontal(lipgloss.Top, mid...))
+
+	for r := r0 + span; r < n; r++ {
+		bands = append(bands, hairlineANSI(pageANSI(lo), w-2))
+		var rowParts []string
+		rowParts = append(rowParts, fillANSI(pageANSI(lo), gutterSize, cellH))
+		for c := 0; c < n; c++ {
+			rowParts = append(rowParts, small(c, r))
+			gidx := globalIndex(m.colOff, n, c, r)
+			rowParts = append(rowParts, fillANSI(pageANSI(pageOf(gidx, pageSize)), gutterSize, cellH))
+		}
+		bands = append(bands, lipgloss.JoinHorizontal(lipgloss.Top, rowParts...))
+	}
+	splitAt := w
+	if span < n {
+		splitAt = gutterSize + c0*(cellW+gutterSize) + bw
+	}
+	inner := lipgloss.JoinVertical(lipgloss.Left, bands...)
 	return frameANSI(inner, w, lo, hi, splitAt)
 }
 
@@ -479,7 +586,7 @@ func (m Model) renderBar(w int) string {
 	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  alt←/→ col  F7/F8 page  tab  ctrl+g goto  ctrl+q", m.grid, m.grid, focus)
+	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  alt←/→ col  ctrl+g  ctrl+q", m.grid, m.grid, focus, m.zoomSpan)
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {

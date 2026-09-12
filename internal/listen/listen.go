@@ -154,26 +154,38 @@ func (se *Session) readLoop() {
 }
 
 func (s *Server) Resize(cols, rows int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, se := range s.sess {
+		s.resizeLocked(se, cols, rows)
+	}
+}
+
+func (s *Server) ResizeSession(name string, cols, rows int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if se := s.sess[name]; se != nil {
+		s.resizeLocked(se, cols, rows)
+	}
+}
+
+func (s *Server) resizeLocked(se *Session, cols, rows int) {
+	if se == nil || se.Pty == nil || se.VT == nil {
+		return
+	}
 	if cols < 8 {
 		cols = 8
 	}
 	if rows < 4 {
 		rows = 4
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, se := range s.sess {
-		if se.Pty == nil || se.VT == nil {
-			continue
-		}
-		c, r := uint16(cols), uint16(rows)
-		if se.cols == c && se.rows == r {
-			continue
-		}
-		se.cols, se.rows = c, r
-		se.VT.Resize(cols, rows)
-		_ = pty.Setsize(se.Pty, &pty.Winsize{Rows: r, Cols: c})
+	c, r := uint16(cols), uint16(rows)
+	if se.cols == c && se.rows == r {
+		return
 	}
+	se.cols, se.rows = c, r
+	se.VT.Resize(cols, rows)
+	_ = pty.Setsize(se.Pty, &pty.Winsize{Rows: r, Cols: c})
 }
 
 func (se *Session) waitLoop() {
