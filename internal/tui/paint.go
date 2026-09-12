@@ -23,6 +23,13 @@ func ansiFG(color int) string {
 
 const ansiReset = "\x1b[0m"
 
+func hairlineANSI(color, w int) string {
+	if w < 1 {
+		w = 1
+	}
+	return ansiFG(color) + strings.Repeat("─", w) + ansiReset
+}
+
 func fillANSI(color, w, h int) string {
 	if w < 1 {
 		w = 1

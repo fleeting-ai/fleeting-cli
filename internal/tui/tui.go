@@ -198,7 +198,7 @@ func cellGeom(termW, gridH, n int) (cellW, cellH, cols, rows int) {
 		n = 3
 	}
 	availW := termW - outerBorder - gutterSize*(n+1)
-	availH := gridH - outerBorder
+	availH := gridH - outerBorder - (n - 1)
 	if availW < n {
 		availW = n
 	}
@@ -362,6 +362,9 @@ func (m Model) renderGrid(w, h int) string {
 			gidx := globalIndex(m.colOff, n, c, r)
 			pg := pageOf(gidx, pageSize)
 			rows = append(rows, cellView(cellW, cellH, gidx, m.snapAt(gidx), vis == m.focus, pageColor(pg), r, n))
+			if r+1 < n {
+				rows = append(rows, hairlineANSI(pageANSI(pg), cellW))
+			}
 		}
 		stack := lipgloss.JoinVertical(lipgloss.Left, rows...)
 		colH = lipgloss.Height(stack)
@@ -395,8 +398,8 @@ func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color
 		fg = lipgloss.Color("15")
 	}
 	innerW := w - cellBorder
-	innerH := h - 1 // one hairline (bottom); first row also has a top
-	if row == 0 {
+	innerH := h - 1
+	if row == 0 || row == n-1 {
 		innerH = h - cellBorder
 	}
 	if innerW < 4 {
@@ -413,7 +416,7 @@ func cellView(w, h, idx int, s *listen.Snapshot, focus bool, page lipgloss.Color
 		MaxHeight(innerH).
 		Border(br).
 		BorderTop(row == 0).
-		BorderBottom(true).
+		BorderBottom(row == n-1).
 		BorderForeground(fg)
 	if s == nil {
 		return box.Render(fmt.Sprintf("%d  —", idx+1))
