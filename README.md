@@ -16,7 +16,9 @@ Focus an empty cell, then **Ctrl+O**. The status bar lists harnesses that are on
 | Oh My Pi | `omp` (`--profile <persona>`, never `--alias`) |
 | Pi | `pi` only — not Oh My Pi |
 
-Type `1`–`9` (or Enter if only one is installed). Esc cancels. Occupied cells refuse the menu. Ad-hoc launches pick the next unused 4-letter name from hcom’s gold list (`luna`, `nova`, …). They last for this `up` session only (not written to `fleet.yaml`). When the process exits, the cell goes blank.
+Type `1`–`9` (or Enter if only one is installed). Esc cancels. Occupied cells refuse the menu. Ad-hoc launches pick the next unused 4-letter name from hcom’s gold list (`luna`, `nova`, …). When the process exits, the cell goes blank.
+
+**Ctrl+S** writes `~/.fleeting/workspace.yaml` (grid, zoom, focus, paging, and extra cells). **Ctrl+Q** quits immediately if nothing changed; otherwise the status bar asks **s** save and quit, **n** quit without saving, **esc** cancel. `fleeting up` restores that workspace on top of `fleet.yaml`.
 
 ## Oh My Pi (required for cells)
 
@@ -46,14 +48,15 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | Alt+1–9 | Phone pad (top-left 3×3): A1 B1 C1 / A2 B2 C2 / A3 B3 C3 |
 | Ctrl+G | Jump: type `D4` or `16`, Enter |
 | Ctrl+O | Launch menu on a blank cell |
+| Ctrl+S | Save workspace (layout + extra cells) |
+| Ctrl+Q | Quit (prompts to save if the workspace changed) |
 | F1 / F2 | Switch hub |
 | F3 | Shrink grid; at 3×3 zoom focus to 2×2 then 3×3 |
 | F4 | Unzoom, then grow grid |
 | Ctrl+M | Message along an allowed peer edge |
 | Ctrl+C | Interrupt in the focused OMP (does not quit Fleeting) |
-| Ctrl+Q | Quit Fleeting |
 
 ## Config
 
-`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`.
+`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`.
 

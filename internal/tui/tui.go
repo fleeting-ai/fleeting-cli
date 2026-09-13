@@ -12,6 +12,7 @@ import (
 	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"github.com/richard-ginsberg/fleeting/internal/listen"
 	"github.com/richard-ginsberg/fleeting/internal/spool"
+	"github.com/richard-ginsberg/fleeting/internal/workspace"
 )
 
 type Model struct {
@@ -33,22 +34,65 @@ type Model struct {
 	gotoBuf  string
 	status   string
 	lastErr  string
-	extras   map[int]string // global index → ad-hoc session name
+	extras   map[int]workspace.Cell // global index → ad-hoc session
 	launch   []harness.Installed
+	savedFP  string
 }
 
 type tickMsg time.Time
 
 func New(srv *listen.Server, cfg *config.File, home string) Model {
 	lipgloss.SetColorProfile(termenv.ANSI256)
-	return Model{
+	m := Model{
 		srv:    srv,
 		cfg:    cfg,
 		home:   home,
 		grid:   cfg.Grid,
 		mode:   "",
-		extras: map[int]string{},
+		extras: map[int]workspace.Cell{},
 	}
+	m.restoreWorkspace()
+	return m
+}
+
+func (m *Model) restoreWorkspace() {
+	ws, err := workspace.Load()
+	if err != nil || ws == nil {
+		m.savedFP = workspace.Fingerprint(m.workspaceFile())
+		return
+	}
+	m.grid = ws.Grid
+	m.colOff = ws.ColOff
+	m.zoomSpan = ws.ZoomSpan
+	m.focus = ws.Focus
+	m.hubIdx = ws.HubIdx
+	if m.grid != 3 {
+		m.zoomSpan = 0
+	}
+	if len(m.cfg.Fleets) > 0 && m.hubIdx >= len(m.cfg.Fleets) {
+		m.hubIdx = 0
+	}
+	for _, c := range ws.Cells {
+		if c.Name == "" || len(c.Cmd) == 0 {
+			continue
+		}
+		fleet := c.Fleet
+		if fleet == "" && len(m.cfg.Fleets) > 0 {
+			fleet = m.cfg.Fleets[m.hubIdx].ID
+		}
+		a := config.Agent{
+			Name:    c.Name,
+			Role:    "worker",
+			Lane:    c.Harness,
+			Harness: c.Harness,
+			Cmd:     c.Cmd,
+		}
+		if err := m.srv.Spawn(fleet, a); err != nil {
+			continue
+		}
+		m.extras[c.Global] = c
+	}
+	m.savedFP = workspace.Fingerprint(m.workspaceFile())
 }
 
 func (m Model) Init() tea.Cmd {
@@ -66,8 +110,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, s := range m.snaps {
 			m.byName[s.Name] = s
 		}
-		for g, n := range m.extras {
-			if _, ok := m.byName[n]; !ok {
+		for g, c := range m.extras {
+			if _, ok := m.byName[c.Name]; !ok {
 				delete(m.extras, g)
 			}
 		}
@@ -79,6 +123,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.mode == "quit" {
+		return m.quitKey(msg)
+	}
 	if m.mode == "launch" {
 		return m.launchKey(msg)
 	}
@@ -139,7 +186,9 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	s := msg.String()
 	switch s {
 	case "ctrl+q":
-		return m, tea.Quit
+		return m.requestQuit()
+	case "ctrl+s":
+		return m.saveWorkspace()
 	case "tab":
 		m.focus++
 	case "shift+tab":
@@ -312,14 +361,14 @@ func (m Model) orderedNames() []string {
 	}
 	out := make([]string, max)
 	copy(out, base)
-	for i, n := range m.extras {
+	for i, c := range m.extras {
 		if i < 0 || i >= len(out) {
 			continue
 		}
 		if i < len(base) && m.liveName(base[i]) {
 			continue
 		}
-		out[i] = n
+		out[i] = c.Name
 	}
 	return out
 }
@@ -630,7 +679,7 @@ func (m Model) renderBar(w int) string {
 	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  alt←/→ col  ctrl+g  ctrl+o launch  ctrl+q", m.grid, m.grid, focus, m.zoomSpan)
+	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  alt←/→ col  ctrl+g  ctrl+o  ctrl+s save  ctrl+q", m.grid, m.grid, focus, m.zoomSpan)
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {
@@ -651,6 +700,9 @@ func (m Model) renderBar(w int) string {
 			b.WriteString("   Enter/1-9  Esc")
 			line = b.String()
 		}
+	}
+	if m.mode == "quit" {
+		line = " workspace changed — s save and quit  n quit without saving  esc cancel"
 	}
 	if m.mode == "msg" {
 		line = fmt.Sprintf(" msg %s → %s: %s", m.focusedName(), m.msgTo, m.msgBody)

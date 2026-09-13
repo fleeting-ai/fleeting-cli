@@ -7,6 +7,7 @@ import (
 	"github.com/richard-ginsberg/fleeting/internal/config"
 	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"github.com/richard-ginsberg/fleeting/internal/persona"
+	"github.com/richard-ginsberg/fleeting/internal/workspace"
 )
 
 func (m Model) openLaunch() (tea.Model, tea.Cmd) {
@@ -87,9 +88,15 @@ func (m Model) pickLaunch(i int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.extras == nil {
-		m.extras = map[int]string{}
+		m.extras = map[int]workspace.Cell{}
 	}
-	m.extras[gidx] = name
+	m.extras[gidx] = workspace.Cell{
+		Global:  gidx,
+		Name:    name,
+		Harness: in.ID,
+		Fleet:   fleetID,
+		Cmd:     a.Cmd,
+	}
 	m.mode = ""
 	m.launch = nil
 	m.lastErr = ""
@@ -105,8 +112,8 @@ func (m Model) takenNames() map[string]bool {
 			taken[n] = true
 		}
 	}
-	for _, n := range m.extras {
-		taken[n] = true
+	for _, c := range m.extras {
+		taken[c.Name] = true
 	}
 	return taken
 }
