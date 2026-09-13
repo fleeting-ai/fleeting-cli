@@ -11,34 +11,73 @@ import (
 
 func (m Model) modelKind() string {
 	if s := m.focused(); s != nil {
-		h := strings.ToLower(s.Harness)
-		if h == "omp" || h == "pi" {
-			return h
+		if k := kindFromName(s.Harness); k != "" {
+			return k
 		}
-		if strings.Contains(strings.ToLower(s.Lane), "omp") {
-			return "omp"
+		if k := kindFromName(s.Lane); k != "" {
+			return k
 		}
-		if strings.Contains(strings.ToLower(s.Lane), "pi") {
-			return "pi"
+	}
+	if name := m.focusedName(); name != "" {
+		if k := m.kindFromConfig(name); k != "" {
+			return k
 		}
 	}
 	gidx := m.visualToGlobal(m.focus)
 	if c, ok := m.extras[gidx]; ok {
-		h := strings.ToLower(c.Harness)
-		if h == "omp" || h == "pi" {
-			return h
+		if k := kindFromName(c.Harness); k != "" {
+			return k
 		}
-		for _, p := range c.Cmd {
-			base := strings.ToLower(filepath.Base(p))
-			if base == "omp" {
-				return "omp"
-			}
-			if base == "pi" {
-				return "pi"
-			}
+		if k := kindFromCmd(c.Cmd); k != "" {
+			return k
 		}
 	}
 	return "pi"
+}
+
+func kindFromName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "omp" || strings.Contains(s, "omp") {
+		return "omp"
+	}
+	if s == "pi" {
+		return "pi"
+	}
+	return ""
+}
+
+func kindFromCmd(cmd []string) string {
+	for _, p := range cmd {
+		base := strings.ToLower(filepath.Base(p))
+		if base == "omp" {
+			return "omp"
+		}
+		if base == "pi" {
+			return "pi"
+		}
+	}
+	return ""
+}
+
+func (m Model) kindFromConfig(name string) string {
+	if m.cfg == nil {
+		return ""
+	}
+	for _, fl := range m.cfg.Fleets {
+		for _, a := range fl.Agents {
+			if a.Name != name {
+				continue
+			}
+			if k := kindFromName(a.Harness); k != "" {
+				return k
+			}
+			if k := kindFromCmd(a.Cmd); k != "" {
+				return k
+			}
+			return "omp"
+		}
+	}
+	return ""
 }
 
 func (m Model) openPiModel() (tea.Model, tea.Cmd) {
