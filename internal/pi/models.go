@@ -3,31 +3,35 @@ package pi
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 type File struct {
-	Providers map[string]Provider `json:"providers"`
+	Providers map[string]Provider `json:"providers" yaml:"providers"`
 }
 
 type Provider struct {
-	BaseURL string         `json:"baseUrl"`
-	API     string         `json:"api"`
-	APIKey  string         `json:"apiKey,omitempty"`
-	Compat  map[string]any `json:"compat,omitempty"`
-	Models  []Model        `json:"models"`
+	BaseURL string         `json:"baseUrl" yaml:"baseUrl"`
+	API     string         `json:"api" yaml:"api"`
+	APIKey  string         `json:"apiKey,omitempty" yaml:"apiKey,omitempty"`
+	Compat  map[string]any `json:"compat,omitempty" yaml:"compat,omitempty"`
+	Models  []Model        `json:"models" yaml:"models"`
 }
 
 type Model struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name,omitempty"`
-	Reasoning      bool           `json:"reasoning,omitempty"`
-	ContextWindow  int            `json:"contextWindow,omitempty"`
-	MaxTokens      int            `json:"maxTokens,omitempty"`
-	SamplingParams map[string]any `json:"samplingParams,omitempty"`
+	ID             string         `json:"id" yaml:"id"`
+	Name           string         `json:"name,omitempty" yaml:"name,omitempty"`
+	Reasoning      bool           `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
+	ContextWindow  int            `json:"contextWindow,omitempty" yaml:"contextWindow,omitempty"`
+	MaxTokens      int            `json:"maxTokens,omitempty" yaml:"maxTokens,omitempty"`
+	SamplingParams map[string]any `json:"samplingParams,omitempty" yaml:"samplingParams,omitempty"`
 }
 
 type Engine struct {
@@ -59,6 +63,20 @@ type Draft struct {
 }
 
 func Path() string {
+	return ConfigPath("pi")
+}
+
+func ConfigPath(kind string) string {
+	if kind == "omp" {
+		if p := os.Getenv("OMP_MODELS_YML"); p != "" {
+			return p
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return filepath.Join(".omp", "agent", "models.yml")
+		}
+		return filepath.Join(home, ".omp", "agent", "models.yml")
+	}
 	if p := os.Getenv("PI_MODELS_JSON"); p != "" {
 		return p
 	}
@@ -67,6 +85,11 @@ func Path() string {
 		return filepath.Join(".pi", "agent", "models.json")
 	}
 	return filepath.Join(home, ".pi", "agent", "models.json")
+}
+
+func isYAML(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".yml" || ext == ".yaml"
 }
 
 func Load(path string) (*File, error) {
@@ -78,7 +101,12 @@ func Load(path string) (*File, error) {
 		return nil, err
 	}
 	var f File
-	if err := json.Unmarshal(b, &f); err != nil {
+	if isYAML(path) {
+		err = yaml.Unmarshal(b, &f)
+	} else {
+		err = json.Unmarshal(b, &f)
+	}
+	if err != nil {
 		return nil, err
 	}
 	if f.Providers == nil {
@@ -185,11 +213,19 @@ func Save(path string, f *File) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(f, "", "  ")
+	var b []byte
+	var err error
+	if isYAML(path) {
+		b, err = yaml.Marshal(f)
+	} else {
+		b, err = json.MarshalIndent(f, "", "  ")
+		if err == nil {
+			b = append(b, '\n')
+		}
+	}
 	if err != nil {
 		return err
 	}
-	b = append(b, '\n')
 	return os.WriteFile(path, b, 0o644)
 }
 
@@ -200,6 +236,107 @@ func Apply(path string, providerName string, d Draft) error {
 	}
 	Merge(f, providerName, d.ProviderEntry())
 	return Save(path, f)
+}
+
+func ApplyKind(kind, providerName string, d Draft) error {
+	return Apply(ConfigPath(kind), providerName, d)
+}
+
+type Entry struct {
+	Provider string
+	ModelID  string
+}
+
+func ListEntries(path string) ([]Entry, error) {
+	f, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []Entry
+	for name, p := range f.Providers {
+		for _, m := range p.Models {
+			if m.ID == "" {
+				continue
+			}
+			out = append(out, Entry{Provider: name, ModelID: m.ID})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Provider != out[j].Provider {
+			return out[i].Provider < out[j].Provider
+		}
+		return out[i].ModelID < out[j].ModelID
+	})
+	return out, nil
+}
+
+func LoadEntry(path, provider, modelID string) (Draft, bool) {
+	f, err := Load(path)
+	if err != nil {
+		return Draft{}, false
+	}
+	p, ok := f.Providers[provider]
+	if !ok {
+		return Draft{}, false
+	}
+	var mod Model
+	found := false
+	for _, m := range p.Models {
+		if m.ID == modelID {
+			mod = m
+			found = true
+			break
+		}
+	}
+	if !found {
+		return Draft{}, false
+	}
+	d := Draft{
+		Host:          "127.0.0.1",
+		Path:          "/v1",
+		Provider:      provider,
+		ModelID:       mod.ID,
+		APIKey:        p.APIKey,
+		ContextWindow: mod.ContextWindow,
+		MaxTokens:     mod.MaxTokens,
+		Thinking:      mod.Reasoning,
+	}
+	if d.ContextWindow == 0 {
+		d.ContextWindow = 32768
+	}
+	if d.MaxTokens == 0 {
+		d.MaxTokens = 8192
+	}
+	fillHostPort(&d, p.BaseURL)
+	for _, e := range Engines {
+		if e.Provider == provider {
+			d.Engine = e
+			break
+		}
+	}
+	if d.Engine.ID == "" {
+		d.Engine = Engine{ID: provider, Title: provider, Port: d.Port, Provider: provider}
+	}
+	if mod.SamplingParams != nil {
+		if t, ok := mod.SamplingParams["temperature"].(float64); ok {
+			d.Temperature = t
+		}
+	}
+	return d, true
+}
+
+func fillHostPort(d *Draft, raw string) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return
+	}
+	d.Host = u.Hostname()
+	if u.Port() != "" {
+		d.Port = ParseInt(u.Port(), d.Port)
+	}
+	if u.Path != "" && u.Path != "/" {
+		d.Path = u.Path
+	}
 }
 
 func ParseInt(s string, def int) int {

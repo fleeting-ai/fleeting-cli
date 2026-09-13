@@ -48,7 +48,7 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | Alt+1–9 | Phone pad (top-left 3×3): A1 B1 C1 / A2 B2 C2 / A3 B3 C3 |
 | Ctrl+G | Jump: type `D4` or `16`, Enter |
 | Ctrl+O | Launch menu on a blank cell |
-| F5 | Add a local Pi model (llama.cpp / vLLM / SGLang; Tab probes /v1/models) |
+| F5 | Add/edit local Pi or OMP models (label follows focused cell; Tab probes /v1/models) |
 | Ctrl+S | Save workspace (layout + extra cells) |
 | Ctrl+Q | Quit (prompts to save if the workspace changed) |
 | F1 / F2 | Switch hub |
@@ -59,9 +59,9 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 
 ## Config
 
-`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`. Pi local models: `~/.pi/agent/models.json`.
+`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`. Pi models: `~/.pi/agent/models.json`. OMP models: `~/.omp/agent/models.yml`.
 
-## Local Pi models (F5)
+## Local Pi / OMP models (F5)
 
-Focus a Pi or Oh My Pi cell, press **F5**, pick llama.cpp / vLLM / SGLang, then host and port. On **model id**, press **Tab** to GET `{host}:{port}/v1/models` and pick from the list (Tab pages; Esc to type an id). Then optional API key, context, max tokens, temperature, thinking. Fleeting merges that into `~/.pi/agent/models.json` (existing SaaS providers stay) with OpenAI-completions `compat` flags local servers need, then restarts the focused cell. Use `/model` in Pi to select it.
+Focus a **Pi** or **Oh My Pi** cell — the status bar says `F5 pi-model` or `F5 omp-model`. Press **F5**. If that harness already has models, choose **1 add** or **2 edit**. Then llama.cpp / vLLM / SGLang, host, port. On **model id**, **Tab** GETs `{host}:{port}/v1/models`. Pi writes `~/.pi/agent/models.json`; OMP writes `~/.omp/agent/models.yml`. Existing SaaS providers stay. The focused cell reloads. Use `/model` in the agent to select it.
 

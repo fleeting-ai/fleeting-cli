@@ -17,32 +17,34 @@ import (
 )
 
 type Model struct {
-	srv      *listen.Server
-	cfg      *config.File
-	home     string
-	width    int
-	height   int
-	grid     int
-	hubIdx   int
-	focus    int
-	zoomSpan int
-	colOff   int
-	snaps    []listen.Snapshot
-	byName   map[string]listen.Snapshot
-	msgTo    string
-	msgBody  string
-	mode     string
-	gotoBuf  string
-	status   string
-	lastErr  string
-	extras   map[int]workspace.Cell // global index → ad-hoc session
-	launch   []harness.Installed
-	savedFP  string
-	piStep   int
-	piBuf    string
-	piDraft  pi.Draft
-	piIDs    []string
-	piPage   int
+	srv       *listen.Server
+	cfg       *config.File
+	home      string
+	width     int
+	height    int
+	grid      int
+	hubIdx    int
+	focus     int
+	zoomSpan  int
+	colOff    int
+	snaps     []listen.Snapshot
+	byName    map[string]listen.Snapshot
+	msgTo     string
+	msgBody   string
+	mode      string
+	gotoBuf   string
+	status    string
+	lastErr   string
+	extras    map[int]workspace.Cell // global index → ad-hoc session
+	launch    []harness.Installed
+	savedFP   string
+	piStep    int
+	piBuf     string
+	piDraft   pi.Draft
+	piIDs     []string
+	piPage    int
+	piKind    string
+	piEntries []pi.Entry
 }
 
 type tickMsg time.Time
@@ -690,7 +692,7 @@ func (m Model) renderBar(w int) string {
 	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  F5 pi-model  alt←/→ col  ctrl+g  ctrl+o  ctrl+s  ctrl+q", m.grid, m.grid, focus, m.zoomSpan)
+	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  F5 %s-model  alt←/→ col  ctrl+g  ctrl+o  ctrl+s  ctrl+q", m.grid, m.grid, focus, m.zoomSpan, m.modelKind())
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {

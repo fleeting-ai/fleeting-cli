@@ -94,3 +94,29 @@ func TestVLLMOmitsThinkingTokenBudget(t *testing.T) {
 		t.Fatal("merge should strip leftover budget field")
 	}
 }
+
+func TestYAMLRoundTripOMP(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "models.yml")
+	t.Setenv("OMP_MODELS_YML", p)
+	d := Draft{Engine: Engines[1], Host: "127.0.0.1", Port: 8000, Path: "/v1", ModelID: "qwen", ContextWindow: 32768, MaxTokens: 8192}
+	if err := ApplyKind("omp", "vllm", d); err != nil {
+		t.Fatal(err)
+	}
+	ents, err := ListEntries(ConfigPath("omp"))
+	if err != nil || len(ents) != 1 || ents[0].Provider != "vllm" || ents[0].ModelID != "qwen" {
+		t.Fatalf("%v %+v", err, ents)
+	}
+	got, ok := LoadEntry(p, "vllm", "qwen")
+	if !ok || got.Host != "127.0.0.1" || got.Port != 8000 {
+		t.Fatalf("load %+v ok=%v", got, ok)
+	}
+	d.ModelID = "other"
+	if err := ApplyKind("omp", "vllm", d); err != nil {
+		t.Fatal(err)
+	}
+	ents, _ = ListEntries(p)
+	if len(ents) != 2 {
+		t.Fatalf("want 2 models, got %+v", ents)
+	}
+}

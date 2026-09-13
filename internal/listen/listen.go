@@ -46,18 +46,19 @@ type Session struct {
 }
 
 type Snapshot struct {
-	Name   string    `json:"name"`
-	Fleet  string    `json:"fleet"`
-	GUID   string    `json:"guid"`
-	Role   string    `json:"role"`
-	Lane   string    `json:"lane"`
-	Hub    bool      `json:"hub"`
-	Peers  []string  `json:"peers"`
-	Alive  bool      `json:"alive"`
-	Err    string    `json:"err,omitempty"`
-	Last   time.Time `json:"last"`
-	Status string    `json:"status"`
-	Screen string    `json:"screen"`
+	Name    string    `json:"name"`
+	Fleet   string    `json:"fleet"`
+	GUID    string    `json:"guid"`
+	Role    string    `json:"role"`
+	Lane    string    `json:"lane"`
+	Harness string    `json:"harness"`
+	Hub     bool      `json:"hub"`
+	Peers   []string  `json:"peers"`
+	Alive   bool      `json:"alive"`
+	Err     string    `json:"err,omitempty"`
+	Last    time.Time `json:"last"`
+	Status  string    `json:"status"`
+	Screen  string    `json:"screen"`
 }
 
 func New(cfg *config.File, home string) *Server {
@@ -292,18 +293,19 @@ func (s *Server) Snapshots() []Snapshot {
 		}
 		st := presence.Of(se.alive, se.last, screen)
 		out = append(out, Snapshot{
-			Name:   se.Agent.Name,
-			Fleet:  se.FleetID,
-			GUID:   se.GUID,
-			Role:   se.Agent.Role,
-			Lane:   se.Agent.Lane,
-			Hub:    se.Agent.Hub,
-			Peers:  se.Agent.Peers,
-			Alive:  se.alive,
-			Err:    se.err,
-			Last:   se.last,
-			Status: st,
-			Screen: screen,
+			Name:    se.Agent.Name,
+			Fleet:   se.FleetID,
+			GUID:    se.GUID,
+			Role:    se.Agent.Role,
+			Lane:    se.Agent.Lane,
+			Harness: se.Agent.Harness,
+			Hub:     se.Agent.Hub,
+			Peers:   se.Agent.Peers,
+			Alive:   se.alive,
+			Err:     se.err,
+			Last:    se.last,
+			Status:  st,
+			Screen:  screen,
 		})
 		se.mu.Unlock()
 	}
