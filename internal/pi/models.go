@@ -40,7 +40,7 @@ type Engine struct {
 
 var Engines = []Engine{
 	{ID: "llamacpp", Title: "llama.cpp", Port: 8080, Budget: "thinking_budget_tokens", Provider: "llamacpp"},
-	{ID: "vllm", Title: "vLLM", Port: 8000, Budget: "thinking_token_budget", Provider: "vllm"},
+	{ID: "vllm", Title: "vLLM", Port: 8000, Budget: "", Provider: "vllm"},
 	{ID: "sglang", Title: "SGLang", Port: 30000, Budget: "thinking_budget", Provider: "sglang"},
 }
 
@@ -117,7 +117,7 @@ func (d Draft) ProviderEntry() Provider {
 		"supportsUsageInStreaming": false,
 		"maxTokensField":           "max_tokens",
 	}
-	if d.Thinking && d.Engine.Budget != "" {
+	if d.Thinking && d.Engine.Budget != "" && d.Engine.ID != "vllm" {
 		compat["thinkingTokenBudgetField"] = d.Engine.Budget
 	}
 	m := Model{
@@ -160,6 +160,10 @@ func Merge(f *File, providerName string, p Provider) {
 		for k, v := range p.Compat {
 			cur.Compat[k] = v
 		}
+	}
+	if providerName == "vllm" && cur.Compat != nil {
+		delete(cur.Compat, "thinkingTokenBudgetField")
+		delete(cur.Compat, "supportsThinkingTokenBudget")
 	}
 	for _, nm := range p.Models {
 		replaced := false

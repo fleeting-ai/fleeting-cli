@@ -67,3 +67,30 @@ func TestApplyRoundTrip(t *testing.T) {
 		t.Fatalf("temp %+v", sg.Models[0].SamplingParams)
 	}
 }
+
+func TestVLLMOmitsThinkingTokenBudget(t *testing.T) {
+	d := Draft{
+		Engine:        Engines[1],
+		Host:          "127.0.0.1",
+		Port:          8000,
+		Path:          "/v1",
+		ModelID:       "local",
+		Thinking:      true,
+		ContextWindow: 32768,
+		MaxTokens:     8192,
+	}
+	p := d.ProviderEntry()
+	if _, ok := p.Compat["thinkingTokenBudgetField"]; ok {
+		t.Fatalf("vLLM V2 rejects thinking_token_budget, got %+v", p.Compat)
+	}
+	if !p.Models[0].Reasoning {
+		t.Fatal("reasoning should still be set")
+	}
+	f := &File{Providers: map[string]Provider{
+		"vllm": {Compat: map[string]any{"thinkingTokenBudgetField": "thinking_token_budget"}},
+	}}
+	Merge(f, "vllm", p)
+	if _, ok := f.Providers["vllm"].Compat["thinkingTokenBudgetField"]; ok {
+		t.Fatal("merge should strip leftover budget field")
+	}
+}
