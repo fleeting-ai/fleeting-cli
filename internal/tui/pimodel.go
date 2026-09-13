@@ -13,6 +13,8 @@ func (m Model) openPiModel() (tea.Model, tea.Cmd) {
 	m.piStep = 0
 	m.piBuf = ""
 	m.piDraft = pi.Draft{Host: "127.0.0.1", Path: "/v1", ContextWindow: 32768, MaxTokens: 8192}
+	m.piIDs = nil
+	m.piPage = 0
 	m.lastErr = ""
 	return m, nil
 }
@@ -26,7 +28,10 @@ func (m Model) piModelPrompt() string {
 	case 2:
 		return fmt.Sprintf(" port [%d]: %s_", m.piDraft.Port, m.piBuf)
 	case 3:
-		return fmt.Sprintf(" model id: %s_", m.piBuf)
+		if len(m.piIDs) > 0 {
+			return m.piModelListPrompt()
+		}
+		return fmt.Sprintf(" model id (Tab = probe %s/models): %s_", m.piDraft.BaseURL(), m.piBuf)
 	case 4:
 		return fmt.Sprintf(" api key (empty=local): %s_", m.piBuf)
 	case 5:
@@ -42,11 +47,42 @@ func (m Model) piModelPrompt() string {
 	}
 }
 
+func (m Model) piModelListPrompt() string {
+	const pageSize = 8
+	start := m.piPage * pageSize
+	if start >= len(m.piIDs) {
+		start = 0
+	}
+	end := start + pageSize
+	if end > len(m.piIDs) {
+		end = len(m.piIDs)
+	}
+	var b strings.Builder
+	b.WriteString(" models")
+	for i, id := range m.piIDs[start:end] {
+		fmt.Fprintf(&b, "  %d %s", i+1, id)
+	}
+	if end < len(m.piIDs) {
+		b.WriteString("  Tab more")
+	}
+	b.WriteString("  Esc type")
+	return b.String()
+}
+
 func (m Model) piModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.piStep == 3 && len(m.piIDs) > 0 {
+		return m.piModelPickKey(msg)
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
 		m.mode = ""
 		m.piBuf = ""
+		m.piIDs = nil
+		return m, nil
+	case tea.KeyTab:
+		if m.piStep == 3 {
+			return m.piModelProbe()
+		}
 		return m, nil
 	case tea.KeyBackspace:
 		if len(m.piBuf) > 0 {
@@ -65,6 +101,48 @@ func (m Model) piModelKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if msg.Type == tea.KeyRunes {
 		m.piBuf += string(msg.Runes)
+	}
+	return m, nil
+}
+
+func (m Model) piModelProbe() (tea.Model, tea.Cmd) {
+	ids, err := pi.ListModels(m.piDraft.BaseURL(), m.piDraft.APIKey)
+	if err != nil {
+		m.lastErr = err.Error()
+		return m, nil
+	}
+	m.piIDs = ids
+	m.piPage = 0
+	m.piBuf = ""
+	m.lastErr = ""
+	m.status = fmt.Sprintf("%d models at %s/models", len(ids), m.piDraft.BaseURL())
+	return m, nil
+}
+
+func (m Model) piModelPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	const pageSize = 8
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.piIDs = nil
+		m.piPage = 0
+		m.piBuf = ""
+		return m, nil
+	case tea.KeyTab:
+		pages := (len(m.piIDs) + pageSize - 1) / pageSize
+		if pages < 1 {
+			pages = 1
+		}
+		m.piPage = (m.piPage + 1) % pages
+		return m, nil
+	}
+	s := msg.String()
+	if len(s) == 1 && s[0] >= '1' && s[0] <= '8' {
+		i := int(s[0]-'1') + m.piPage*pageSize
+		if i >= 0 && i < len(m.piIDs) {
+			m.piBuf = m.piIDs[i]
+			m.piIDs = nil
+			return m.piModelAdvance()
+		}
 	}
 	return m, nil
 }
@@ -110,6 +188,7 @@ func (m Model) piModelAdvance() (tea.Model, tea.Cmd) {
 	}
 	m.piStep++
 	m.piBuf = ""
+	m.piIDs = nil
 	m.lastErr = ""
 	return m, nil
 }

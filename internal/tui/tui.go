@@ -41,6 +41,8 @@ type Model struct {
 	piStep   int
 	piBuf    string
 	piDraft  pi.Draft
+	piIDs    []string
+	piPage   int
 }
 
 type tickMsg time.Time
