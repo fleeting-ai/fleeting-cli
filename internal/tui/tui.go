@@ -11,6 +11,7 @@ import (
 	"github.com/richard-ginsberg/fleeting/internal/config"
 	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"github.com/richard-ginsberg/fleeting/internal/listen"
+	"github.com/richard-ginsberg/fleeting/internal/pi"
 	"github.com/richard-ginsberg/fleeting/internal/spool"
 	"github.com/richard-ginsberg/fleeting/internal/workspace"
 )
@@ -37,6 +38,9 @@ type Model struct {
 	extras   map[int]workspace.Cell // global index → ad-hoc session
 	launch   []harness.Installed
 	savedFP  string
+	piStep   int
+	piBuf    string
+	piDraft  pi.Draft
 }
 
 type tickMsg time.Time
@@ -123,6 +127,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.mode == "pimodel" {
+		return m.piModelKey(msg)
+	}
 	if m.mode == "quit" {
 		return m.quitKey(msg)
 	}
@@ -244,6 +251,8 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gotoBuf = ""
 	case "ctrl+o":
 		return m.openLaunch()
+	case "f5":
+		return m.openPiModel()
 	case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
 		m.focus = keypadFocus(int(s[len(s)-1]-'0'), m.grid)
 	default:
@@ -679,7 +688,7 @@ func (m Model) renderBar(w int) string {
 	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  alt←/→ col  ctrl+g  ctrl+o  ctrl+s save  ctrl+q", m.grid, m.grid, focus, m.zoomSpan)
+	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  F5 pi-model  alt←/→ col  ctrl+g  ctrl+o  ctrl+s  ctrl+q", m.grid, m.grid, focus, m.zoomSpan)
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {
@@ -700,6 +709,9 @@ func (m Model) renderBar(w int) string {
 			b.WriteString("   Enter/1-9  Esc")
 			line = b.String()
 		}
+	}
+	if m.mode == "pimodel" {
+		line = m.piModelPrompt()
 	}
 	if m.mode == "quit" {
 		line = " workspace changed — s save and quit  n quit without saving  esc cancel"

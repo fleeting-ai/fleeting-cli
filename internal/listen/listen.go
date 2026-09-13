@@ -155,6 +155,33 @@ func (s *Server) Spawn(fleetID string, a config.Agent) error {
 	return s.spawn(fleetID, a)
 }
 
+// Restart kills a live session and starts the same agent again (Pi model reload).
+func (s *Server) Restart(name string) error {
+	s.mu.Lock()
+	se := s.sess[name]
+	if se == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("unknown agent %s", name)
+	}
+	a := se.Agent
+	fleet := se.FleetID
+	if se.Cmd != nil && se.Cmd.Process != nil {
+		_ = se.Cmd.Process.Kill()
+	}
+	s.mu.Unlock()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		_, ok := s.sess[name]
+		s.mu.Unlock()
+		if !ok {
+			return s.Spawn(fleet, a)
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout restarting %s", name)
+}
+
 func (se *Session) readLoop() {
 	br := bufio.NewReader(se.Pty)
 	for {

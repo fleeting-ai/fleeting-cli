@@ -48,6 +48,7 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | Alt+1–9 | Phone pad (top-left 3×3): A1 B1 C1 / A2 B2 C2 / A3 B3 C3 |
 | Ctrl+G | Jump: type `D4` or `16`, Enter |
 | Ctrl+O | Launch menu on a blank cell |
+| F5 | Add a local Pi model (llama.cpp / vLLM / SGLang) |
 | Ctrl+S | Save workspace (layout + extra cells) |
 | Ctrl+Q | Quit (prompts to save if the workspace changed) |
 | F1 / F2 | Switch hub |
@@ -58,5 +59,9 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 
 ## Config
 
-`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`.
+`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`. Pi local models: `~/.pi/agent/models.json`.
+
+## Local Pi models (F5)
+
+Focus a Pi or Oh My Pi cell, press **F5**, pick llama.cpp / vLLM / SGLang, then endpoint, model id, optional API key, context, max tokens, temperature, thinking. Fleeting merges that into `~/.pi/agent/models.json` (existing SaaS providers stay) with OpenAI-completions `compat` flags local servers need, then restarts the focused cell. Use `/model` in Pi to select it.
 
