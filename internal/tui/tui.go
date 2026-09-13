@@ -14,24 +14,24 @@ import (
 )
 
 type Model struct {
-	srv     *listen.Server
-	cfg     *config.File
-	home    string
-	width   int
-	height  int
-	grid    int
-	hubIdx  int
-	focus   int
+	srv      *listen.Server
+	cfg      *config.File
+	home     string
+	width    int
+	height   int
+	grid     int
+	hubIdx   int
+	focus    int
 	zoomSpan int
 	colOff   int
-	snaps   []listen.Snapshot
-	byName  map[string]listen.Snapshot
-	msgTo   string
-	msgBody string
-	mode    string
-	gotoBuf string
-	status  string
-	lastErr string
+	snaps    []listen.Snapshot
+	byName   map[string]listen.Snapshot
+	msgTo    string
+	msgBody  string
+	mode     string
+	gotoBuf  string
+	status   string
+	lastErr  string
 }
 
 type tickMsg time.Time
@@ -412,7 +412,7 @@ func (m Model) renderGrid(w, h int) string {
 			vis := r*n + c
 			gidx := globalIndex(m.colOff, n, c, r)
 			pg := pageOf(gidx, pageSize)
-			rows = append(rows, cellView(cellW, cellH, vis, m.snapAt(gidx), vis == m.focus, pageColor(pg), r, n))
+			rows = append(rows, cellView(cellW, cellH, vis, n, m.snapAt(gidx), vis == m.focus, pageColor(pg), r, n))
 			if r+1 < n {
 				rows = append(rows, hairlineANSI(pageANSI(pg), cellW))
 			}
@@ -457,7 +457,7 @@ func (m Model) renderZoomed(w, h int) string {
 		vis := r*n + c
 		gidx := globalIndex(m.colOff, n, c, r)
 		pg := pageOf(gidx, pageSize)
-		return cellView(cellW, cellH, vis, m.snapAt(gidx), vis == m.focus, pageColor(pg), r, n)
+		return cellView(cellW, cellH, vis, n, m.snapAt(gidx), vis == m.focus, pageColor(pg), r, n)
 	}
 	stackSmall := func(c, r0, r1 int) string {
 		var rows []string
@@ -490,11 +490,11 @@ func (m Model) renderZoomed(w, h int) string {
 	}
 
 	bw := span*cellW + (span-1)*gutterSize
-	bh := span*cellH + (span-1)
+	bh := span*cellH + (span - 1)
 	fvis := fr*n + fc
 	fgidx := globalIndex(m.colOff, n, fc, fr)
 	fpg := pageOf(fgidx, pageSize)
-	big := cellView(bw, bh, fvis, m.snapAt(fgidx), true, pageColor(fpg), 0, 1)
+	big := cellView(bw, bh, fvis, n, m.snapAt(fgidx), true, pageColor(fpg), 0, 1)
 
 	var mid []string
 	mid = append(mid, fillANSI(pageANSI(lo), gutterSize, bh))
@@ -529,14 +529,14 @@ func (m Model) renderZoomed(w, h int) string {
 	return frameANSI(inner, w, lo, hi, splitAt)
 }
 
-func cellView(w, h, vis int, s *listen.Snapshot, focus bool, page lipgloss.Color, row, n int) string {
+func cellView(w, h, vis, gridN int, s *listen.Snapshot, focus bool, page lipgloss.Color, row, borderN int) string {
 	fg := page
 	if focus {
 		fg = lipgloss.Color("15")
 	}
 	innerW := w - cellBorder
 	innerH := h - 1
-	if row == 0 || row == n-1 {
+	if row == 0 || row == borderN-1 {
 		innerH = h - cellBorder
 	}
 	if innerW < 4 {
@@ -545,7 +545,7 @@ func cellView(w, h, vis int, s *listen.Snapshot, focus bool, page lipgloss.Color
 	if innerH < 3 {
 		innerH = 3
 	}
-	addr := visAddr(vis, n)
+	addr := visAddr(vis, gridN)
 	box := lipgloss.NewStyle().
 		Width(innerW).
 		MaxWidth(innerW).
@@ -553,7 +553,7 @@ func cellView(w, h, vis int, s *listen.Snapshot, focus bool, page lipgloss.Color
 		MaxHeight(innerH).
 		Border(lipgloss.NormalBorder()).
 		BorderTop(row == 0).
-		BorderBottom(row == n-1).
+		BorderBottom(row == borderN-1).
 		BorderForeground(fg)
 	if s == nil {
 		return box.Render(addr + "  —")

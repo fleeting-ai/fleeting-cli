@@ -3,8 +3,15 @@ package tui
 import "testing"
 
 func TestCellAddr(t *testing.T) {
-	if cellAddr(0, 0) != "A1" || cellAddr(3, 3) != "D4" {
-		t.Fatalf("A1/D4 %s %s", cellAddr(0, 0), cellAddr(3, 3))
+	if visAddr(8, 3) != "C3" {
+		t.Fatalf("C3 on 3x3 got %s", visAddr(8, 3))
+	}
+	if visAddr(2, 3) != "C1" {
+		t.Fatalf("C1 got %s", visAddr(2, 3))
+	}
+	// zoomed pane used n=1 for borders — must not use that for the label
+	if visAddr(8, 1) == "C3" {
+		t.Fatal("n=1 must not look like C3")
 	}
 }
 
