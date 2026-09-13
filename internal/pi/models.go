@@ -66,14 +66,21 @@ func Path() string {
 	return ConfigPath("pi")
 }
 
-func ConfigPath(kind string) string {
+func ConfigPath(kind string, persona ...string) string {
 	if kind == "omp" {
 		if p := os.Getenv("OMP_MODELS_YML"); p != "" {
 			return p
 		}
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return filepath.Join(".omp", "agent", "models.yml")
+			home = "."
+		}
+		name := ""
+		if len(persona) > 0 {
+			name = strings.TrimSpace(persona[0])
+		}
+		if name != "" && name != "default" {
+			return filepath.Join(home, ".omp", "profiles", name, "agent", "models.yml")
 		}
 		return filepath.Join(home, ".omp", "agent", "models.yml")
 	}
@@ -135,6 +142,10 @@ func (d Draft) BaseURL() string {
 }
 
 func (d Draft) ProviderEntry() Provider {
+	return d.providerEntry(false)
+}
+
+func (d Draft) providerEntry(omp bool) Provider {
 	key := strings.TrimSpace(d.APIKey)
 	if key == "" {
 		key = "local"
@@ -145,7 +156,8 @@ func (d Draft) ProviderEntry() Provider {
 		"supportsUsageInStreaming": false,
 		"maxTokensField":           "max_tokens",
 	}
-	if d.Thinking && d.Engine.Budget != "" && d.Engine.ID != "vllm" {
+	// OMP's models.yml schema has no thinkingTokenBudgetField (that's Pi).
+	if !omp && d.Thinking && d.Engine.Budget != "" && d.Engine.ID != "vllm" {
 		compat["thinkingTokenBudgetField"] = d.Engine.Budget
 	}
 	m := Model{
@@ -155,7 +167,8 @@ func (d Draft) ProviderEntry() Provider {
 		ContextWindow: d.ContextWindow,
 		MaxTokens:     d.MaxTokens,
 	}
-	if d.Temperature > 0 {
+	// samplingParams is valid in Pi models.json, rejected by OMP models.yml schema.
+	if !omp && d.Temperature > 0 {
 		m.SamplingParams = map[string]any{"temperature": d.Temperature}
 	}
 	return Provider{
@@ -216,7 +229,12 @@ func Save(path string, f *File) error {
 	var b []byte
 	var err error
 	if isYAML(path) {
-		b, err = yaml.Marshal(f)
+		var buf strings.Builder
+		enc := yaml.NewEncoder(&buf)
+		enc.SetIndent(2)
+		err = enc.Encode(f)
+		_ = enc.Close()
+		b = []byte(buf.String())
 	} else {
 		b, err = json.MarshalIndent(f, "", "  ")
 		if err == nil {
@@ -230,16 +248,21 @@ func Save(path string, f *File) error {
 }
 
 func Apply(path string, providerName string, d Draft) error {
+	return applyAt(path, providerName, d, isYAML(path))
+}
+
+func ApplyKind(kind, providerName string, d Draft, persona ...string) error {
+	path := ConfigPath(kind, persona...)
+	return applyAt(path, providerName, d, kind == "omp" || isYAML(path))
+}
+
+func applyAt(path, providerName string, d Draft, omp bool) error {
 	f, err := Load(path)
 	if err != nil {
 		return err
 	}
-	Merge(f, providerName, d.ProviderEntry())
+	Merge(f, providerName, d.providerEntry(omp))
 	return Save(path, f)
-}
-
-func ApplyKind(kind, providerName string, d Draft) error {
-	return Apply(ConfigPath(kind), providerName, d)
 }
 
 type Entry struct {

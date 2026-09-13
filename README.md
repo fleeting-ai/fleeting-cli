@@ -59,9 +59,9 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 
 ## Config
 
-`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`. Pi models: `~/.pi/agent/models.json`. OMP models: `~/.omp/agent/models.yml`.
+`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`. Pi models: `~/.pi/agent/models.json`. OMP models: `~/.omp/profiles/<persona>/agent/models.yml`.
 
 ## Local Pi / OMP models (F5)
 
-Focus a **Pi** or **Oh My Pi** cell — the status bar says `F5 pi-model` or `F5 omp-model`. Press **F5**. If that harness already has models, choose **1 add** or **2 edit**. Then llama.cpp / vLLM / SGLang, host, port. On **model id**, **Tab** GETs `{host}:{port}/v1/models`. Pi writes `~/.pi/agent/models.json`; OMP writes `~/.omp/agent/models.yml`. Existing SaaS providers stay. The focused cell reloads. Use `/model` in the agent to select it.
+Focus a **Pi** or **Oh My Pi** cell — the status bar says `F5 pi-model` or `F5 omp-model`. Press **F5**. If that harness already has models, choose **1 add** or **2 edit**. Then llama.cpp / vLLM / SGLang, host, port. On **model id**, **Tab** GETs `{host}:{port}/v1/models`. Pi writes `~/.pi/agent/models.json`. OMP with `--profile kite` reads **`~/.omp/profiles/kite/agent/models.yml`**, not `~/.omp/agent/models.yml`. YAML is 2-space and omits keys OMP’s schema rejects (`samplingParams`, `thinkingTokenBudgetField`). Existing SaaS providers stay. The focused cell reloads. Use `/model` in the agent to select it.
 

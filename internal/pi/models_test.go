@@ -3,6 +3,7 @@ package pi
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -103,6 +104,17 @@ func TestYAMLRoundTripOMP(t *testing.T) {
 	if err := ApplyKind("omp", "vllm", d); err != nil {
 		t.Fatal(err)
 	}
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(raw)
+	if strings.Contains(s, "samplingParams") || strings.Contains(s, "thinkingTokenBudgetField") {
+		t.Fatalf("schema-invalid keys: %s", s)
+	}
+	if strings.Contains(s, "\n    vllm:") {
+		t.Fatalf("4-space indent: %s", s)
+	}
 	ents, err := ListEntries(ConfigPath("omp"))
 	if err != nil || len(ents) != 1 || ents[0].Provider != "vllm" || ents[0].ModelID != "qwen" {
 		t.Fatalf("%v %+v", err, ents)
@@ -118,5 +130,24 @@ func TestYAMLRoundTripOMP(t *testing.T) {
 	ents, _ = ListEntries(p)
 	if len(ents) != 2 {
 		t.Fatalf("want 2 models, got %+v", ents)
+	}
+}
+
+func TestConfigPathUsesOMPProfile(t *testing.T) {
+	t.Setenv("OMP_MODELS_YML", "")
+	p := ConfigPath("omp", "kite")
+	if !strings.Contains(p, filepath.Join("profiles", "kite", "agent", "models.yml")) {
+		t.Fatalf("got %s", p)
+	}
+}
+
+func TestOMPProviderOmitsSamplingParams(t *testing.T) {
+	d := Draft{Engine: Engines[1], ModelID: "qwen", Temperature: 0.7, Thinking: true, Host: "127.0.0.1", Port: 8000, Path: "/v1"}
+	p := d.providerEntry(true)
+	if p.Models[0].SamplingParams != nil {
+		t.Fatal(p.Models[0].SamplingParams)
+	}
+	if _, ok := p.Compat["thinkingTokenBudgetField"]; ok {
+		t.Fatal("omp compat")
 	}
 }

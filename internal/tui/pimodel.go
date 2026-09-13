@@ -35,6 +35,13 @@ func (m Model) modelKind() string {
 	return "pi"
 }
 
+func (m Model) modelsPath() string {
+	if m.piKind == "omp" {
+		return pi.ConfigPath("omp", m.focusedName())
+	}
+	return pi.ConfigPath(m.piKind)
+}
+
 func kindFromName(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if s == "omp" || strings.Contains(s, "omp") {
@@ -89,7 +96,7 @@ func (m Model) openPiModel() (tea.Model, tea.Cmd) {
 	m.piPage = 0
 	m.piEntries = nil
 	m.lastErr = ""
-	ents, err := pi.ListEntries(pi.ConfigPath(m.piKind))
+	ents, err := pi.ListEntries(m.modelsPath())
 	if err == nil && len(ents) > 0 {
 		m.piEntries = ents
 		m.piStep = -1
@@ -250,7 +257,7 @@ func (m Model) piExistingPickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) loadExisting(e pi.Entry) (tea.Model, tea.Cmd) {
-	d, ok := pi.LoadEntry(pi.ConfigPath(m.piKind), e.Provider, e.ModelID)
+	d, ok := pi.LoadEntry(m.modelsPath(), e.Provider, e.ModelID)
 	if !ok {
 		m.lastErr = "could not load " + e.Provider + "/" + e.ModelID
 		return m, nil
@@ -369,7 +376,7 @@ func (m Model) finishPiModel() (tea.Model, tea.Cmd) {
 	if name == "" {
 		name = m.piDraft.Provider
 	}
-	if err := pi.ApplyKind(m.piKind, name, m.piDraft); err != nil {
+	if err := pi.ApplyKind(m.piKind, name, m.piDraft, m.focusedName()); err != nil {
 		m.lastErr = err.Error()
 		return m, nil
 	}
