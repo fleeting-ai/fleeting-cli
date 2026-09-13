@@ -66,6 +66,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, s := range m.snaps {
 			m.byName[s.Name] = s
 		}
+		for g, n := range m.extras {
+			if _, ok := m.byName[n]; !ok {
+				delete(m.extras, g)
+			}
+		}
 		return m, tea.Tick(time.Millisecond*120, func(t time.Time) tea.Msg { return tickMsg(t) })
 	case tea.KeyMsg:
 		return m.key(msg)
@@ -308,11 +313,23 @@ func (m Model) orderedNames() []string {
 	out := make([]string, max)
 	copy(out, base)
 	for i, n := range m.extras {
-		if i >= 0 && i < len(out) && (i >= len(base) || out[i] == "") {
-			out[i] = n
+		if i < 0 || i >= len(out) {
+			continue
 		}
+		if i < len(base) && m.liveName(base[i]) {
+			continue
+		}
+		out[i] = n
 	}
 	return out
+}
+
+func (m Model) liveName(name string) bool {
+	if name == "" {
+		return false
+	}
+	_, ok := m.byName[name]
+	return ok
 }
 
 func (m Model) snapAt(global int) *listen.Snapshot {
@@ -325,7 +342,7 @@ func (m Model) snapAt(global int) *listen.Snapshot {
 		return nil
 	}
 	s, ok := m.byName[name]
-	if !ok {
+	if !ok || !s.Alive {
 		return nil
 	}
 	return &s

@@ -7,12 +7,13 @@ import (
 	"path/filepath"
 )
 
-// Catalog is the v1 launch menu: Claude Code, Codex, Cursor, Pi.
+// Catalog is the v1 launch menu. Oh My Pi (`omp`) is not labeled Pi.
 var Catalog = []Spec{
 	{ID: "claude", Title: "Claude Code", Bins: []string{"claude"}},
 	{ID: "codex", Title: "Codex", Bins: []string{"codex"}},
 	{ID: "cursor", Title: "Cursor", Bins: []string{"agent", "cursor-agent", "cursor"}},
-	{ID: "pi", Title: "Pi", Bins: []string{"omp", "pi"}},
+	{ID: "omp", Title: "Oh My Pi", Bins: []string{"omp"}},
+	{ID: "pi", Title: "Pi", Bins: []string{"pi"}},
 }
 
 type Spec struct {
@@ -78,7 +79,7 @@ func cmdFor(_, path string) []string {
 
 // CmdForAgent is the argv to spawn. OMP gets --profile <persona>, never --alias.
 func (in Installed) CmdForAgent(name string) []string {
-	if in.ID == "pi" && filepath.Base(in.Path) == "omp" {
+	if in.ID == "omp" || filepath.Base(in.Path) == "omp" {
 		return []string{in.Path, "--profile", name}
 	}
 	return append([]string{}, in.Cmd...)

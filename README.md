@@ -13,9 +13,10 @@ Focus an empty cell, then **Ctrl+O**. The status bar lists harnesses that are on
 | Claude Code | `claude` |
 | Codex | `codex` |
 | Cursor | `agent`, then `cursor-agent`, then `cursor` |
-| Pi | `omp`, then `pi` |
+| Oh My Pi | `omp` (`--profile <persona>`, never `--alias`) |
+| Pi | `pi` only — not Oh My Pi |
 
-Type `1`–`9` (or Enter if only one is installed). Esc cancels. Occupied cells refuse the menu. Ad-hoc launches last for this `up` session only (not written to `fleet.yaml`). Pi via `omp` still uses `--profile <persona>`, never `--alias`.
+Type `1`–`9` (or Enter if only one is installed). Esc cancels. Occupied cells refuse the menu. Ad-hoc launches pick the next unused 4-letter name from hcom’s gold list (`luna`, `nova`, …). They last for this `up` session only (not written to `fleet.yaml`). When the process exits, the cell goes blank.
 
 ## Oh My Pi (required for cells)
 

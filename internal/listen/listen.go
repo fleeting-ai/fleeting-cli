@@ -137,7 +137,7 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	s.sess[a.Name] = se
 	s.mu.Unlock()
 	go se.readLoop()
-	go se.waitLoop()
+	go se.waitLoop(s)
 	return nil
 }
 
@@ -202,14 +202,38 @@ func (s *Server) resizeLocked(se *Session, cols, rows int) {
 	_ = pty.Setsize(se.Pty, &pty.Winsize{Rows: r, Cols: c})
 }
 
-func (se *Session) waitLoop() {
+func (se *Session) waitLoop(s *Server) {
 	err := se.Cmd.Wait()
 	se.mu.Lock()
 	se.alive = false
 	if err != nil {
 		se.err = err.Error()
 	}
+	name := se.Agent.Name
 	se.mu.Unlock()
+	s.Reap(name)
+}
+
+// Reap drops an exited session so the grid cell goes blank (no stale VT).
+func (s *Server) Reap(name string) {
+	s.mu.Lock()
+	se := s.sess[name]
+	if se == nil {
+		s.mu.Unlock()
+		return
+	}
+	se.mu.Lock()
+	dead := !se.alive
+	se.mu.Unlock()
+	if !dead {
+		s.mu.Unlock()
+		return
+	}
+	delete(s.sess, name)
+	s.mu.Unlock()
+	if se.Pty != nil {
+		_ = se.Pty.Close()
+	}
 }
 
 func (s *Server) KillAll() {
@@ -231,6 +255,10 @@ func (s *Server) Snapshots() []Snapshot {
 	out := make([]Snapshot, 0, len(s.sess))
 	for _, se := range s.sess {
 		se.mu.Lock()
+		if !se.alive {
+			se.mu.Unlock()
+			continue
+		}
 		screen := ""
 		if se.VT != nil {
 			screen = dumpVT(se.VT)

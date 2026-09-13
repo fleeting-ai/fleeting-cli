@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/richard-ginsberg/fleeting/internal/config"
 	"github.com/richard-ginsberg/fleeting/internal/harness"
+	"github.com/richard-ginsberg/fleeting/internal/persona"
 )
 
 func (m Model) openLaunch() (tea.Model, tea.Cmd) {
@@ -61,7 +62,7 @@ func (m Model) pickLaunch(i int) (tea.Model, tea.Cmd) {
 		m.launch = nil
 		return m, nil
 	}
-	name := allocSlotName(in.ID, m.takenNames())
+	name := persona.Next(m.takenNames())
 	if name == "" {
 		m.lastErr = "no free persona name"
 		m.mode = ""
@@ -108,25 +109,4 @@ func (m Model) takenNames() map[string]bool {
 		taken[n] = true
 	}
 	return taken
-}
-
-var namePrefix = map[string]string{
-	"claude": "cl",
-	"codex":  "cx",
-	"cursor": "cu",
-	"pi":     "pi",
-}
-
-func allocSlotName(harnessID string, taken map[string]bool) string {
-	p := namePrefix[harnessID]
-	if p == "" {
-		p = "xx"
-	}
-	for i := 0; i < 100; i++ {
-		n := fmt.Sprintf("%s%02d", p, i)
-		if !taken[n] {
-			return n
-		}
-	}
-	return ""
 }

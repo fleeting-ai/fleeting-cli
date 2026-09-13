@@ -65,13 +65,28 @@ func TestCursorPrefersAgent(t *testing.T) {
 
 func TestCmdForAgentOMPProfile(t *testing.T) {
 	in := Installed{
-		Spec: Spec{ID: "pi"},
+		Spec: Spec{ID: "omp"},
 		Path: "/usr/bin/omp",
 		Bin:  "omp",
 		Cmd:  []string{"/usr/bin/omp"},
 	}
-	cmd := in.CmdForAgent("cl00")
-	if len(cmd) != 3 || cmd[1] != "--profile" || cmd[2] != "cl00" {
+	cmd := in.CmdForAgent("luna")
+	if len(cmd) != 3 || cmd[1] != "--profile" || cmd[2] != "luna" {
 		t.Fatalf("got %v", cmd)
+	}
+}
+
+func TestCatalogSplitsOMPAndPi(t *testing.T) {
+	var omp, pi bool
+	for _, sp := range Catalog {
+		if sp.ID == "omp" && sp.Title == "Oh My Pi" {
+			omp = true
+		}
+		if sp.ID == "pi" && sp.Title == "Pi" && len(sp.Bins) == 1 && sp.Bins[0] == "pi" {
+			pi = true
+		}
+	}
+	if !omp || !pi {
+		t.Fatal("omp and pi must be separate menu entries")
 	}
 }
