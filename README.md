@@ -49,7 +49,7 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | Ctrl+G | Jump: type `D4` or `16`, Enter |
 | Ctrl+O | Launch menu on a blank cell |
 | F5 | Add/edit local Pi or OMP models (label follows focused cell; Tab probes /v1/models) |
-| Ctrl+S | Save workspace (layout + extra cells) |
+| Ctrl+S | Save workspace (refreshes live cell snapshots: harness, cmd, slot) |
 | Ctrl+Q | Quit (prompts to save if the workspace changed) |
 | F1 / F2 | Switch hub |
 | F3 | Shrink grid; at 3×3 zoom focus to 2×2 then 3×3 |

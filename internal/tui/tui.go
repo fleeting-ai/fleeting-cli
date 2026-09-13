@@ -81,22 +81,34 @@ func (m *Model) restoreWorkspace() {
 		m.hubIdx = 0
 	}
 	for _, c := range ws.Cells {
-		if c.Name == "" || len(c.Cmd) == 0 {
+		if c.Name == "" {
 			continue
 		}
 		fleet := c.Fleet
 		if fleet == "" && len(m.cfg.Fleets) > 0 {
 			fleet = m.cfg.Fleets[m.hubIdx].ID
 		}
-		a := config.Agent{
-			Name:    c.Name,
-			Role:    "worker",
-			Lane:    c.Harness,
-			Harness: c.Harness,
-			Cmd:     c.Cmd,
-		}
-		if err := m.srv.Spawn(fleet, a); err != nil {
-			continue
+		if !m.fleetHas(c.Name) {
+			if len(c.Cmd) == 0 {
+				continue
+			}
+			a := config.Agent{
+				Name:       c.Name,
+				Role:       c.Role,
+				Lane:       c.Lane,
+				Harness:    c.Harness,
+				Cmd:        c.Cmd,
+				ResumeGUID: c.GUID,
+			}
+			if a.Role == "" {
+				a.Role = "worker"
+			}
+			if a.Lane == "" {
+				a.Lane = c.Harness
+			}
+			if err := m.srv.Spawn(fleet, a); err != nil {
+				continue
+			}
 		}
 		m.extras[c.Global] = c
 	}

@@ -26,7 +26,27 @@ type Cell struct {
 	Name    string   `yaml:"name"`
 	Harness string   `yaml:"harness"`
 	Fleet   string   `yaml:"fleet"`
+	Role    string   `yaml:"role,omitempty"`
+	Lane    string   `yaml:"lane,omitempty"`
+	GUID    string   `yaml:"guid,omitempty"`
 	Cmd     []string `yaml:"cmd"`
+}
+
+func (c Cell) Missing() []string {
+	var miss []string
+	if c.Name == "" {
+		miss = append(miss, "name")
+	}
+	if c.Harness == "" {
+		miss = append(miss, "harness")
+	}
+	if len(c.Cmd) == 0 {
+		miss = append(miss, "cmd")
+	}
+	if c.Global < 0 {
+		miss = append(miss, "slot")
+	}
+	return miss
 }
 
 func Path() string {

@@ -52,6 +52,7 @@ type Snapshot struct {
 	Role    string    `json:"role"`
 	Lane    string    `json:"lane"`
 	Harness string    `json:"harness"`
+	Cmd     []string  `json:"cmd,omitempty"`
 	Hub     bool      `json:"hub"`
 	Peers   []string  `json:"peers"`
 	Alive   bool      `json:"alive"`
@@ -102,6 +103,18 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	guid := a.ResumeGUID
 	if guid == "" {
 		guid = fmt.Sprintf("%s-%d", a.Name, time.Now().UnixNano())
+	}
+	if a.Harness == "" {
+		base := ""
+		if len(a.Cmd) > 0 {
+			base = filepath.Base(a.Cmd[0])
+		}
+		switch base {
+		case "omp":
+			a.Harness = "omp"
+		case "pi":
+			a.Harness = "pi"
+		}
 	}
 	cmd := exec.Command(a.Cmd[0], a.Cmd[1:]...)
 	cmd.Env = append(os.Environ(),
@@ -299,6 +312,7 @@ func (s *Server) Snapshots() []Snapshot {
 			Role:    se.Agent.Role,
 			Lane:    se.Agent.Lane,
 			Harness: se.Agent.Harness,
+			Cmd:     append([]string{}, se.Agent.Cmd...),
 			Hub:     se.Agent.Hub,
 			Peers:   se.Agent.Peers,
 			Alive:   se.alive,

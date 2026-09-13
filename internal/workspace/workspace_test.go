@@ -40,3 +40,11 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCellMissingHarnessAndCmd(t *testing.T) {
+	c := Cell{Global: 2, Name: "kite"}
+	miss := c.Missing()
+	if len(miss) != 2 {
+		t.Fatalf("%v", miss)
+	}
+}
