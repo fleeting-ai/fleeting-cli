@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"github.com/richard-ginsberg/fleeting/internal/listen"
 	"github.com/richard-ginsberg/fleeting/internal/spool"
 )
@@ -32,6 +33,8 @@ type Model struct {
 	gotoBuf  string
 	status   string
 	lastErr  string
+	extras   map[int]string // global index → ad-hoc session name
+	launch   []harness.Installed
 }
 
 type tickMsg time.Time
@@ -39,11 +42,12 @@ type tickMsg time.Time
 func New(srv *listen.Server, cfg *config.File, home string) Model {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	return Model{
-		srv:  srv,
-		cfg:  cfg,
-		home: home,
-		grid: cfg.Grid,
-		mode: "",
+		srv:    srv,
+		cfg:    cfg,
+		home:   home,
+		grid:   cfg.Grid,
+		mode:   "",
+		extras: map[int]string{},
 	}
 }
 
@@ -70,6 +74,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.mode == "launch" {
+		return m.launchKey(msg)
+	}
 	if m.mode == "goto" {
 		switch msg.Type {
 		case tea.KeyEsc:
@@ -181,6 +188,8 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+g":
 		m.mode = "goto"
 		m.gotoBuf = ""
+	case "ctrl+o":
+		return m.openLaunch()
 	case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
 		m.focus = keypadFocus(int(s[len(s)-1]-'0'), m.grid)
 	default:
@@ -277,17 +286,31 @@ func (m Model) maxOff() int {
 }
 
 func (m Model) orderedNames() []string {
+	var base []string
 	if len(m.cfg.Fleets) == 0 {
-		out := make([]string, 0, len(m.snaps))
+		base = make([]string, 0, len(m.snaps))
 		for _, s := range m.snaps {
-			out = append(out, s.Name)
+			base = append(base, s.Name)
 		}
-		return out
+	} else {
+		fl := m.cfg.Fleets[m.hubIdx]
+		base = make([]string, 0, len(fl.Agents))
+		for _, a := range fl.Agents {
+			base = append(base, a.Name)
+		}
 	}
-	fl := m.cfg.Fleets[m.hubIdx]
-	out := make([]string, 0, len(fl.Agents))
-	for _, a := range fl.Agents {
-		out = append(out, a.Name)
+	max := len(base)
+	for i := range m.extras {
+		if i+1 > max {
+			max = i + 1
+		}
+	}
+	out := make([]string, max)
+	copy(out, base)
+	for i, n := range m.extras {
+		if i >= 0 && i < len(out) && (i >= len(base) || out[i] == "") {
+			out[i] = n
+		}
 	}
 	return out
 }
@@ -297,7 +320,11 @@ func (m Model) snapAt(global int) *listen.Snapshot {
 	if global < 0 || global >= len(names) {
 		return nil
 	}
-	s, ok := m.byName[names[global]]
+	name := names[global]
+	if name == "" {
+		return nil
+	}
+	s, ok := m.byName[name]
 	if !ok {
 		return nil
 	}
@@ -586,7 +613,7 @@ func (m Model) renderBar(w int) string {
 	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  alt←/→ col  ctrl+g  ctrl+q", m.grid, m.grid, focus, m.zoomSpan)
+	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  alt←/→ col  ctrl+g  ctrl+o launch  ctrl+q", m.grid, m.grid, focus, m.zoomSpan)
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {
@@ -594,6 +621,19 @@ func (m Model) renderBar(w int) string {
 	}
 	if m.mode == "goto" {
 		line = fmt.Sprintf(" goto %s_  (D4 or 16, Enter)", m.gotoBuf)
+	}
+	if m.mode == "launch" {
+		if len(m.launch) == 0 {
+			line = " launch: none installed (claude, codex, agent/cursor, omp/pi)  Esc"
+		} else {
+			var b strings.Builder
+			b.WriteString(" launch ")
+			for i, in := range m.launch {
+				fmt.Fprintf(&b, " %d %s", i+1, in.Title)
+			}
+			b.WriteString("   Enter/1-9  Esc")
+			line = b.String()
+		}
 	}
 	if m.mode == "msg" {
 		line = fmt.Sprintf(" msg %s → %s: %s", m.focusedName(), m.msgTo, m.msgBody)

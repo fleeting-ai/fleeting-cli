@@ -22,12 +22,12 @@ import (
 // Server is the local Fleeting listener. Remote hosts will speak the same
 // length-prefixed JSON protocol over TCP later; v1 is a Unix socket only.
 type Server struct {
-	cfg   *config.File
-	path  string
-	mu    sync.Mutex
-	sess  map[string]*Session
-	ln    net.Listener
-	home  string
+	cfg  *config.File
+	path string
+	mu   sync.Mutex
+	sess map[string]*Session
+	ln   net.Listener
+	home string
 }
 
 type Session struct {
@@ -46,18 +46,18 @@ type Session struct {
 }
 
 type Snapshot struct {
-	Name    string    `json:"name"`
-	Fleet   string    `json:"fleet"`
-	GUID    string    `json:"guid"`
-	Role    string    `json:"role"`
-	Lane    string    `json:"lane"`
-	Hub     bool      `json:"hub"`
-	Peers   []string  `json:"peers"`
-	Alive   bool      `json:"alive"`
-	Err     string    `json:"err,omitempty"`
-	Last    time.Time `json:"last"`
-	Status  string    `json:"status"`
-	Screen  string    `json:"screen"`
+	Name   string    `json:"name"`
+	Fleet  string    `json:"fleet"`
+	GUID   string    `json:"guid"`
+	Role   string    `json:"role"`
+	Lane   string    `json:"lane"`
+	Hub    bool      `json:"hub"`
+	Peers  []string  `json:"peers"`
+	Alive  bool      `json:"alive"`
+	Err    string    `json:"err,omitempty"`
+	Last   time.Time `json:"last"`
+	Status string    `json:"status"`
+	Screen string    `json:"screen"`
 }
 
 func New(cfg *config.File, home string) *Server {
@@ -139,6 +139,20 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	go se.readLoop()
 	go se.waitLoop()
 	return nil
+}
+
+// Spawn starts a session that is not in the fleet file (blank-cell launch).
+func (s *Server) Spawn(fleetID string, a config.Agent) error {
+	if a.Name == "" || len(a.Cmd) == 0 {
+		return fmt.Errorf("spawn needs name and cmd")
+	}
+	s.mu.Lock()
+	_, exists := s.sess[a.Name]
+	s.mu.Unlock()
+	if exists {
+		return fmt.Errorf("session %s already running", a.Name)
+	}
+	return s.spawn(fleetID, a)
 }
 
 func (se *Session) readLoop() {
@@ -253,12 +267,12 @@ func (s *Server) Write(name string, data []byte) error {
 }
 
 type wire struct {
-	Op     string `json:"op"`
-	Name   string `json:"name,omitempty"`
-	Data   string `json:"data,omitempty"`
-	To     string `json:"to,omitempty"`
-	From   string `json:"from,omitempty"`
-	Body   string `json:"body,omitempty"`
+	Op   string `json:"op"`
+	Name string `json:"name,omitempty"`
+	Data string `json:"data,omitempty"`
+	To   string `json:"to,omitempty"`
+	From string `json:"from,omitempty"`
+	Body string `json:"body,omitempty"`
 }
 
 func (s *Server) accept(ctx context.Context) {
