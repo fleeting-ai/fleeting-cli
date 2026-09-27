@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"github.com/richard-ginsberg/fleeting/internal/listen"
 	"github.com/richard-ginsberg/fleeting/internal/persona"
+	"github.com/richard-ginsberg/fleeting/internal/workspace"
 )
 
 func TestPersonaNextSkipsTaken(t *testing.T) {
@@ -26,5 +28,23 @@ func TestSnapAtBlankWhenDead(t *testing.T) {
 	}
 	if m.snapAt(0) != nil {
 		t.Fatal("dead session should leave the cell blank")
+	}
+}
+
+func TestNameForLaunchReusesDeadCellPersona(t *testing.T) {
+	m := Model{
+		grid: 3,
+		cfg:  &config.File{},
+		extras: map[int]workspace.Cell{
+			2: {Global: 2, Name: "luna", Harness: "omp", Cmd: []string{"omp", "--profile", "luna"}},
+		},
+	}
+	if got := m.nameForLaunch(2); got != "luna" {
+		t.Fatalf("dead A3 should relaunch luna, got %q", got)
+	}
+	in := harness.Installed{Spec: harness.Spec{ID: "omp"}, Path: "/usr/bin/omp"}
+	cmd := in.CmdForAgent(m.nameForLaunch(2))
+	if len(cmd) != 3 || cmd[1] != "--profile" || cmd[2] != "luna" {
+		t.Fatalf("expected omp --profile luna, got %v", cmd)
 	}
 }

@@ -63,7 +63,7 @@ func (m Model) pickLaunch(i int) (tea.Model, tea.Cmd) {
 		m.launch = nil
 		return m, nil
 	}
-	name := persona.Next(m.takenNames())
+	name := m.nameForLaunch(gidx)
 	if name == "" {
 		m.lastErr = "no free persona name"
 		m.mode = ""
@@ -105,6 +105,17 @@ func (m Model) pickLaunch(i int) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) nameForLaunch(gidx int) string {
+	if c, ok := m.extras[gidx]; ok && c.Name != "" {
+		return c.Name
+	}
+	names := m.orderedNames()
+	if gidx >= 0 && gidx < len(names) && names[gidx] != "" && !m.liveName(names[gidx]) {
+		return names[gidx]
+	}
+	return persona.Next(m.takenNames())
+}
+
 func (m Model) takenNames() map[string]bool {
 	taken := map[string]bool{}
 	for _, n := range m.orderedNames() {
@@ -113,7 +124,14 @@ func (m Model) takenNames() map[string]bool {
 		}
 	}
 	for _, c := range m.extras {
-		taken[c.Name] = true
+		if c.Name != "" {
+			taken[c.Name] = true
+		}
+	}
+	for _, s := range m.snaps {
+		if s.Name != "" {
+			taken[s.Name] = true
+		}
 	}
 	return taken
 }

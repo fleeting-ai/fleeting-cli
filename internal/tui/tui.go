@@ -48,6 +48,8 @@ type Model struct {
 	piPage    int
 	piKind    string
 	piEntries []pi.Entry
+	help      bool
+	helpOff   int
 }
 
 type tickMsg time.Time
@@ -165,11 +167,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, s := range m.snaps {
 			m.byName[s.Name] = s
 		}
-		for g, c := range m.extras {
-			if _, ok := m.byName[c.Name]; !ok {
-				delete(m.extras, g)
-			}
-		}
 		return m, tea.Tick(time.Millisecond*120, func(t time.Time) tea.Msg { return tickMsg(t) })
 	case tea.KeyMsg:
 		return m.key(msg)
@@ -280,7 +277,42 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	if m.help {
+		if isHelpToggle(s) || s == "esc" || msg.Type == tea.KeyEsc {
+			m.help = false
+			m.helpOff = 0
+			return m, nil
+		}
+		switch s {
+		case "up", "pgup":
+			if m.helpOff > 0 {
+				m.helpOff--
+			}
+			return m, nil
+		case "down", "pgdown":
+			m.helpOff++
+			return m, nil
+		case "ctrl+c":
+			if name := m.focusedName(); name != "" && m.srv != nil {
+				if b := encodeKey(msg); len(b) > 0 {
+					_ = m.srv.Write(name, b)
+				}
+			}
+			return m, nil
+		case "ctrl+a":
+			m.prefix = true
+			m.status = "C-a  d=detach"
+			return m, nil
+		default:
+			return m, nil
+		}
+	}
 	switch s {
+	case "?", "f1":
+		m.help = true
+		m.helpOff = 0
+		m.status = "help  ?/F1/Esc close"
+		return m, nil
 	case "ctrl+a":
 		m.prefix = true
 		m.status = "C-a  d=detach"
@@ -293,7 +325,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus++
 	case "shift+tab":
 		m.focus--
-	case "alt+[", "f1":
+	case "alt+[":
 		if m.hubIdx > 0 {
 			m.hubIdx--
 		}
@@ -561,6 +593,9 @@ func (m Model) View() string {
 		gridH = 10
 	}
 	grid := m.renderGrid(m.width, gridH)
+	if m.help {
+		grid = m.renderHelpOverlay(grid, m.width, gridH)
+	}
 	op := m.renderOperator(m.width, opH)
 	bar := m.renderBar(m.width)
 	return lipgloss.JoinVertical(lipgloss.Left, op, grid, bar)
@@ -784,7 +819,7 @@ func (m Model) renderBar(w int) string {
 	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  C-a d detach  F3/F4  F5 %s-model  alt←/→  ctrl+g  ctrl+o  ctrl+s  ctrl+q", m.grid, m.grid, focus, m.zoomSpan, m.modelKind())
+	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  ?/F1 help  C-a d detach  F3/F4  F5 %s-model  alt←/→  ctrl+g  ctrl+o  ctrl+s  ctrl+q", m.grid, m.grid, focus, m.zoomSpan, m.modelKind())
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {
