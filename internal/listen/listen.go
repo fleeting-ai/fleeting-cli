@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -200,10 +202,17 @@ func (s *Server) Spawn(fleetID string, a config.Agent) error {
 		return fmt.Errorf("spawn needs name and cmd")
 	}
 	s.mu.Lock()
-	_, exists := s.sess[a.Name]
-	s.mu.Unlock()
-	if exists {
-		return fmt.Errorf("session %s already running", a.Name)
+	if se := s.sess[a.Name]; se != nil {
+		if processLive(se) {
+			s.mu.Unlock()
+			return fmt.Errorf("session %s already running", a.Name)
+		}
+		delete(s.sess, a.Name)
+		s.mu.Unlock()
+		dropSession(se)
+		clearStaleLocks(a.Name)
+	} else {
+		s.mu.Unlock()
 	}
 	return s.spawn(fleetID, a)
 }
@@ -294,7 +303,68 @@ func (se *Session) waitLoop(s *Server) {
 	s.Reap(name)
 }
 
-// Reap drops an exited session so the grid cell goes blank (no stale VT).
+// processLive is true only while the child PID still exists.
+// A dead PTY, Wait() result, or vanished PID must not hold the persona name.
+func processLive(se *Session) bool {
+	if se == nil {
+		return false
+	}
+	se.mu.Lock()
+	defer se.mu.Unlock()
+	if !se.alive {
+		return false
+	}
+	cmd := se.Cmd
+	if cmd == nil || cmd.Process == nil {
+		return false
+	}
+	if cmd.ProcessState != nil {
+		return false
+	}
+	if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
+		return false
+	}
+	return true
+}
+
+func dropSession(se *Session) {
+	if se == nil {
+		return
+	}
+	se.mu.Lock()
+	se.alive = false
+	ptmx := se.Pty
+	se.Pty = nil
+	se.mu.Unlock()
+	if ptmx != nil {
+		_ = ptmx.Close()
+	}
+}
+
+func clearStaleLocks(name string) {
+	if name == "" {
+		return
+	}
+	dirs := []string{filepath.Join(config.Dir(), "sessions", name)}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".omp", "profiles", name))
+	}
+	for _, dir := range dirs {
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			n := e.Name()
+			if strings.HasSuffix(n, ".lock") || strings.HasSuffix(n, ".pid") || strings.HasSuffix(n, ".sock") {
+				_ = os.Remove(filepath.Join(dir, n))
+			}
+		}
+	}
+}
+
+// Reap drops an exited session so the grid cell goes blank (no stale VT)
+// and the 4-letter persona name can be launched again.
 func (s *Server) Reap(name string) {
 	s.mu.Lock()
 	se := s.sess[name]
@@ -302,17 +372,27 @@ func (s *Server) Reap(name string) {
 		s.mu.Unlock()
 		return
 	}
-	se.mu.Lock()
-	dead := !se.alive
-	se.mu.Unlock()
-	if !dead {
+	if processLive(se) {
 		s.mu.Unlock()
 		return
 	}
 	delete(s.sess, name)
 	s.mu.Unlock()
-	if se.Pty != nil {
-		_ = se.Pty.Close()
+	dropSession(se)
+	clearStaleLocks(name)
+}
+
+func (s *Server) harvestDead() {
+	s.mu.Lock()
+	var dead []string
+	for name, se := range s.sess {
+		if !processLive(se) {
+			dead = append(dead, name)
+		}
+	}
+	s.mu.Unlock()
+	for _, name := range dead {
+		s.Reap(name)
 	}
 }
 
@@ -330,6 +410,7 @@ func (s *Server) KillAll() {
 }
 
 func (s *Server) Snapshots() []Snapshot {
+	s.harvestDead()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]Snapshot, 0, len(s.sess))

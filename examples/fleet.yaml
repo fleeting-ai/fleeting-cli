@@ -1,4 +1,4 @@
-# Empty cmd: launches Oh My Pi as --alias <name>
+# Empty cmd: launches omp --profile <name>
 operator: richard
 grid: 3
 

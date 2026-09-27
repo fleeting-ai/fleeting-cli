@@ -167,11 +167,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, s := range m.snaps {
 			m.byName[s.Name] = s
 		}
-		for g, c := range m.extras {
-			if _, ok := m.byName[c.Name]; !ok {
-				delete(m.extras, g)
-			}
-		}
 		return m, tea.Tick(time.Millisecond*120, func(t time.Time) tea.Msg { return tickMsg(t) })
 	case tea.KeyMsg:
 		return m.key(msg)
