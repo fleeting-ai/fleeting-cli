@@ -99,6 +99,7 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 
 | Key | Action |
 | --- | --- |
+| **? / F1** | Help overlay on the grid (same key or Esc closes; Ctrl+C and Ctrl-A are not stolen) |
 | **Ctrl-A d** | Detach TUI; daemon keeps PTYs |
 | Ctrl-A Ctrl-A | Send Ctrl-A to the focused PTY |
 | Alt+← / Alt+→ | Column page |
@@ -110,7 +111,8 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | F5 | Add/edit local Pi or OMP models (label follows focused cell; Tab probes /v1/models) |
 | Ctrl+S | Save workspace (refreshes live cell snapshots: harness, cmd, slot) |
 | Ctrl+Q | Detach (prompts to save if the workspace changed) |
-| F1 / F2 | Switch hub |
+| Alt+[ | Previous hub |
+| Alt+] / F2 | Next hub |
 | F3 | Shrink grid; at 3×3 zoom focus to 2×2 then 3×3 |
 | F4 | Unzoom, then grow grid |
 | Ctrl+M | Message along an allowed peer edge |
