@@ -32,9 +32,9 @@ func TestValidateFourLetterAndDenyShape(t *testing.T) {
 	if len(nova.Peers) != 1 || nova.Peers[0] != "risa" {
 		t.Fatalf("nova should only peer risa, got %v", nova.Peers)
 	}
-	if len(nova.Cmd) < 3 || nova.Cmd[1] != "--alias" || nova.Cmd[2] != "nova" {
-		if nova.Cmd[0] != "bash" { // omp missing in CI is ok
-			t.Fatalf("expected omp --alias nova, got %v", nova.Cmd)
+	if len(nova.Cmd) < 3 || nova.Cmd[1] != "--profile" || nova.Cmd[2] != "nova" {
+		if len(nova.Cmd) == 0 || nova.Cmd[0] != "bash" {
+			t.Fatalf("expected omp --profile nova, got %v", nova.Cmd)
 		}
 	}
 }

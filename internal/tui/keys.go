@@ -34,8 +34,8 @@ func encodeKey(msg tea.KeyMsg) []byte {
 		return []byte("\x1b[5~")
 	case tea.KeyPgDown:
 		return []byte("\x1b[6~")
-	case tea.KeyCtrlA:
-		return []byte{0x01}
+	case tea.KeyCtrlC:
+		return []byte{0x03}
 	case tea.KeyCtrlB:
 		return []byte{0x02}
 	case tea.KeyCtrlD:
