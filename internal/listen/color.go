@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	attrReverse    = 1 << iota
+	attrReverse = 1 << iota
 	attrUnderline
 	attrBold
 	attrGfx

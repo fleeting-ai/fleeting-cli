@@ -55,6 +55,14 @@ func SocketPath() string {
 	return filepath.Join(Dir(), "fleeting.sock")
 }
 
+func PidPath() string {
+	return filepath.Join(Dir(), "fleeting.pid")
+}
+
+func LogPath() string {
+	return filepath.Join(Dir(), "daemon.log")
+}
+
 func Load(path string) (*File, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {

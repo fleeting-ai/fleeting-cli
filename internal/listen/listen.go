@@ -22,12 +22,31 @@ import (
 // Server is the local Fleeting listener. Remote hosts will speak the same
 // length-prefixed JSON protocol over TCP later; v1 is a Unix socket only.
 type Server struct {
-	cfg  *config.File
-	path string
-	mu   sync.Mutex
-	sess map[string]*Session
-	ln   net.Listener
-	home string
+	cfg      *config.File
+	path     string
+	mu       sync.Mutex
+	sess     map[string]*Session
+	ln       net.Listener
+	home     string
+	attMu    sync.Mutex
+	nAttach  int
+	attacher *jsonConn
+	replayMu sync.Mutex
+	replay   []ReplayFrame
+	stop     chan struct{}
+}
+
+type jsonConn struct {
+	net.Conn
+	mu  sync.Mutex
+	enc *json.Encoder
+	dec *json.Decoder
+}
+
+func (j *jsonConn) send(p Packet) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.enc.Encode(p)
 }
 
 type Session struct {
@@ -68,6 +87,7 @@ func New(cfg *config.File, home string) *Server {
 		path: config.SocketPath(),
 		sess: map[string]*Session{},
 		home: home,
+		stop: make(chan struct{}),
 	}
 }
 
@@ -75,12 +95,16 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
 		return err
 	}
+	if err := probeLive(s.path); err == nil {
+		return fmt.Errorf("daemon already running on %s", s.path)
+	}
 	_ = os.Remove(s.path)
 	ln, err := net.Listen("unix", s.path)
 	if err != nil {
 		return err
 	}
 	s.ln = ln
+	_ = os.WriteFile(config.PidPath(), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
 
 	for _, fl := range s.cfg.Fleets {
 		for _, a := range fl.Agents {
@@ -91,11 +115,26 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	go s.accept(ctx)
+	go s.replayLoop(ctx)
 	go func() {
-		<-ctx.Done()
+		select {
+		case <-ctx.Done():
+		case <-s.stop:
+		}
 		_ = ln.Close()
 		s.KillAll()
+		_ = os.Remove(s.path)
+		_ = os.Remove(config.PidPath())
 	}()
+	return nil
+}
+
+func probeLive(path string) error {
+	c, err := net.DialTimeout("unix", path, 200*time.Millisecond)
+	if err != nil {
+		return err
+	}
+	_ = c.Close()
 	return nil
 }
 
@@ -337,15 +376,6 @@ func (s *Server) Write(name string, data []byte) error {
 	return err
 }
 
-type wire struct {
-	Op   string `json:"op"`
-	Name string `json:"name,omitempty"`
-	Data string `json:"data,omitempty"`
-	To   string `json:"to,omitempty"`
-	From string `json:"from,omitempty"`
-	Body string `json:"body,omitempty"`
-}
-
 func (s *Server) accept(ctx context.Context) {
 	for {
 		c, err := s.ln.Accept()
@@ -362,27 +392,145 @@ func (s *Server) accept(ctx context.Context) {
 }
 
 func (s *Server) handle(c net.Conn) {
-	defer c.Close()
-	dec := json.NewDecoder(c)
-	enc := json.NewEncoder(c)
+	jc := &jsonConn{Conn: c, enc: json.NewEncoder(c), dec: json.NewDecoder(c)}
+	defer func() {
+		s.dropAttacher(jc)
+		_ = c.Close()
+	}()
 	for {
-		var w wire
-		if err := dec.Decode(&w); err != nil {
+		var w Packet
+		if err := jc.dec.Decode(&w); err != nil {
 			return
 		}
-		switch w.Op {
-		case "list":
-			_ = enc.Encode(s.Snapshots())
-		case "input":
-			err := s.Write(w.Name, []byte(w.Data))
-			_ = enc.Encode(map[string]any{"ok": err == nil, "err": errstr(err)})
-		case "msg":
-			err := s.RoutePublic(w.From, w.To, w.Body)
-			_ = enc.Encode(map[string]any{"ok": err == nil, "err": errstr(err)})
-		default:
-			_ = enc.Encode(map[string]any{"ok": false, "err": "unknown op"})
+		if !s.dispatch(jc, w) {
+			return
 		}
 	}
+}
+
+func (s *Server) dispatch(jc *jsonConn, w Packet) bool {
+	switch w.Op {
+	case "list":
+		_ = jc.send(Packet{OK: true, Op: "list", Snaps: s.Snapshots()})
+	case "status":
+		st := s.Status()
+		_ = jc.send(Packet{OK: true, Op: "status", Status: &st, Snaps: s.Snapshots()})
+	case "input":
+		err := s.Write(w.Name, []byte(w.Data))
+		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
+	case "msg":
+		err := s.RoutePublic(w.From, w.To, w.Body)
+		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
+	case "spawn":
+		if w.Agent == nil {
+			_ = jc.send(Packet{OK: false, Err: "spawn needs agent"})
+			break
+		}
+		err := s.Spawn(w.Fleet, *w.Agent)
+		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
+	case "restart":
+		err := s.Restart(w.Name)
+		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
+	case "resize":
+		if w.Name != "" {
+			s.ResizeSession(w.Name, w.Cols, w.Rows)
+		} else {
+			s.Resize(w.Cols, w.Rows)
+		}
+		_ = jc.send(Packet{OK: true})
+	case "attach":
+		if err := s.takeAttach(jc, w.Steal); err != nil {
+			_ = jc.send(Packet{OK: false, Err: err.Error()})
+			return true
+		}
+		st := s.Status()
+		_ = jc.send(Packet{OK: true, Op: "attach", Replay: s.takeReplay(), Snaps: s.Snapshots(), Status: &st})
+	case "detach":
+		s.kickAttacher()
+		_ = jc.send(Packet{OK: true, Op: "detach"})
+	case "down":
+		_ = jc.send(Packet{OK: true, Op: "down"})
+		s.requestStop()
+		return false
+	default:
+		_ = jc.send(Packet{OK: false, Err: "unknown op"})
+	}
+	return true
+}
+
+func (s *Server) takeAttach(jc *jsonConn, steal bool) error {
+	s.attMu.Lock()
+	if s.attacher != nil && s.attacher != jc {
+		if !steal {
+			s.attMu.Unlock()
+			return fmt.Errorf("already attached — fleeting -d -r to steal")
+		}
+		att := s.attacher
+		s.attacher = nil
+		s.nAttach = 0
+		s.attMu.Unlock()
+		_ = att.send(Packet{Op: "kick", OK: true})
+		_ = att.Close()
+		s.attMu.Lock()
+	}
+	s.attacher = jc
+	s.nAttach = 1
+	s.attMu.Unlock()
+	return nil
+}
+
+func (s *Server) dropAttacher(jc *jsonConn) {
+	s.attMu.Lock()
+	defer s.attMu.Unlock()
+	if s.attacher == jc {
+		s.attacher = nil
+		s.nAttach = 0
+	}
+}
+
+func (s *Server) kickAttacher() {
+	s.attMu.Lock()
+	att := s.attacher
+	s.attacher = nil
+	s.nAttach = 0
+	s.attMu.Unlock()
+	if att != nil {
+		_ = att.send(Packet{Op: "kick", OK: true})
+		_ = att.Close()
+	}
+}
+
+func (s *Server) Attached() bool {
+	s.attMu.Lock()
+	defer s.attMu.Unlock()
+	return s.nAttach > 0
+}
+
+func (s *Server) Status() Status {
+	snaps := s.Snapshots()
+	names := make([]string, 0, len(snaps))
+	for _, sn := range snaps {
+		names = append(names, sn.Name)
+	}
+	return Status{
+		PID:      os.Getpid(),
+		Socket:   s.path,
+		Attached: s.Attached(),
+		Agents:   len(snaps),
+		Names:    names,
+	}
+}
+
+func (s *Server) requestStop() {
+	select {
+	case <-s.stop:
+	default:
+		close(s.stop)
+	}
+}
+
+func (s *Server) Stopped() <-chan struct{} {
+	return s.stop
 }
 
 func errstr(err error) string {

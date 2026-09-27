@@ -17,8 +17,11 @@ import (
 )
 
 type Model struct {
-	srv       *listen.Server
+	srv       listen.Host
 	cfg       *config.File
+	player    *listen.Player
+	prefix    bool
+	kick      <-chan struct{}
 	home      string
 	width     int
 	height    int
@@ -49,7 +52,7 @@ type Model struct {
 
 type tickMsg time.Time
 
-func New(srv *listen.Server, cfg *config.File, home string) Model {
+func New(srv listen.Host, cfg *config.File, home string) Model {
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	m := Model{
 		srv:    srv,
@@ -115,17 +118,49 @@ func (m *Model) restoreWorkspace() {
 	m.savedFP = workspace.Fingerprint(m.workspaceFile())
 }
 
+type kickMsg struct{}
+
+func (m *Model) WithReplay(frames []listen.ReplayFrame) {
+	m.player = listen.NewPlayer(frames, 4)
+	if m.player != nil {
+		m.mode = "replay"
+		m.status = "replay 4x  (2/4/8/g=16  L live)"
+	}
+}
+
+func (m *Model) WithKick(ch <-chan struct{}) {
+	m.kick = ch
+}
+
 func (m Model) Init() tea.Cmd {
-	return tea.Tick(time.Millisecond*200, func(t time.Time) tea.Msg { return tickMsg(t) })
+	tick := tea.Tick(time.Millisecond*200, func(t time.Time) tea.Msg { return tickMsg(t) })
+	if m.kick == nil {
+		return tick
+	}
+	return tea.Batch(tick, func() tea.Msg {
+		<-m.kick
+		return kickMsg{}
+	})
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case kickMsg:
+		return m, tea.Quit
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.applyPTYs(m.paneSize())
 	case tickMsg:
 		m.snaps = m.srv.Snapshots()
+		if m.player != nil && !m.player.Live() {
+			m.player.Advance(time.Time(msg))
+			m.snaps = m.player.Overlay(m.snaps)
+			if m.player.Live() {
+				m.mode = ""
+				m.status = "live"
+				m.snaps = m.srv.Snapshots()
+			}
+		}
 		m.byName = make(map[string]listen.Snapshot, len(m.snaps))
 		for _, s := range m.snaps {
 			m.byName[s.Name] = s
@@ -207,7 +242,49 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	s := msg.String()
+	if m.mode == "replay" && m.player != nil && !m.player.Live() {
+		switch s {
+		case "2":
+			m.player.SetSpeed(2)
+			m.status = "replay 2x  (L live)"
+			return m, nil
+		case "4":
+			m.player.SetSpeed(4)
+			m.status = "replay 4x  (L live)"
+			return m, nil
+		case "8":
+			m.player.SetSpeed(8)
+			m.status = "replay 8x  (L live)"
+			return m, nil
+		case "g", "6":
+			m.player.SetSpeed(16)
+			m.status = "replay 16x  (L live)"
+			return m, nil
+		case "l", "L", "end", "enter":
+			m.player.Jump()
+			m.mode = ""
+			m.status = "live"
+			return m, nil
+		}
+	}
+	if m.prefix {
+		m.prefix = false
+		if s == "d" || s == "D" {
+			m.status = "detached"
+			return m, tea.Quit
+		}
+		if s == "ctrl+a" {
+			if name := m.focusedName(); name != "" {
+				_ = m.srv.Write(name, []byte{0x01})
+			}
+			return m, nil
+		}
+	}
 	switch s {
+	case "ctrl+a":
+		m.prefix = true
+		m.status = "C-a  d=detach"
+		return m, nil
 	case "ctrl+q":
 		return m.requestQuit()
 	case "ctrl+s":
@@ -272,7 +349,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9":
 		m.focus = keypadFocus(int(s[len(s)-1]-'0'), m.grid)
 	default:
-		if name := m.focusedName(); name != "" {
+		if name := m.focusedName(); name != "" && m.srv != nil {
 			if b := encodeKey(msg); len(b) > 0 {
 				_ = m.srv.Write(name, b)
 			}
@@ -303,6 +380,9 @@ func (m Model) paneSize() (cols, rows int) {
 }
 
 func (m Model) applyPTYs(cols, rows int) {
+	if m.srv == nil {
+		return
+	}
 	m.srv.Resize(cols, rows)
 	if m.zoomSpan < 2 {
 		return
@@ -366,7 +446,7 @@ func (m Model) maxOff() int {
 
 func (m Model) orderedNames() []string {
 	var base []string
-	if len(m.cfg.Fleets) == 0 {
+	if m.cfg == nil || len(m.cfg.Fleets) == 0 {
 		base = make([]string, 0, len(m.snaps))
 		for _, s := range m.snaps {
 			base = append(base, s.Name)
@@ -704,7 +784,7 @@ func (m Model) renderBar(w int) string {
 	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  F3/F4 size  F5 %s-model  alt←/→ col  ctrl+g  ctrl+o  ctrl+s  ctrl+q", m.grid, m.grid, focus, m.zoomSpan, m.modelKind())
+	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  C-a d detach  F3/F4  F5 %s-model  alt←/→  ctrl+g  ctrl+o  ctrl+s  ctrl+q", m.grid, m.grid, focus, m.zoomSpan, m.modelKind())
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {
@@ -734,6 +814,12 @@ func (m Model) renderBar(w int) string {
 	}
 	if m.mode == "msg" {
 		line = fmt.Sprintf(" msg %s → %s: %s", m.focusedName(), m.msgTo, m.msgBody)
+	}
+	if m.prefix {
+		line = " C-a prefix  d detach  C-a C-a sends ^A to the PTY  (Ctrl+C still goes to the agent)"
+	}
+	if m.mode == "replay" && m.player != nil && !m.player.Live() {
+		line = fmt.Sprintf(" replay %dx  2/4/8/g=16x  L jump live  frame %d/%d", m.player.Speed, m.player.FrameIndex(), m.player.Len())
 	}
 	pad := rest.Width(w - lipgloss.Width(pageBit)).Render(line)
 	return lipgloss.JoinHorizontal(lipgloss.Top, pageBit, pad)
