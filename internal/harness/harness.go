@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Catalog is the v1 launch menu. Oh My Pi (`omp`) is not labeled Pi.
@@ -42,6 +43,7 @@ func InstalledOnPATH() []Installed {
 }
 
 func Resolve(id string) (Installed, error) {
+	id = strings.ToLower(strings.TrimSpace(id))
 	for _, sp := range Catalog {
 		if sp.ID == id {
 			in, ok := resolve(sp)
@@ -67,14 +69,10 @@ func resolve(sp Spec) (Installed, bool) {
 			Spec: sp,
 			Path: p,
 			Bin:  bin,
-			Cmd:  cmdFor(sp.ID, p),
+			Cmd:  []string{p},
 		}, true
 	}
 	return Installed{}, false
-}
-
-func cmdFor(_, path string) []string {
-	return []string{path}
 }
 
 // CmdForAgent is the argv to spawn. OMP gets --profile <persona>, never --alias.
@@ -82,7 +80,94 @@ func (in Installed) CmdForAgent(name string) []string {
 	if in.ID == "omp" || filepath.Base(in.Path) == "omp" {
 		return []string{in.Path, "--profile", name}
 	}
-	return append([]string{}, in.Cmd...)
+	return []string{in.Path}
+}
+
+// MissingCmd is a placeholder PTY when the harness binary is not on PATH.
+func MissingCmd(id, name string) []string {
+	msg := missingHelp(id)
+	return []string{"bash", "-lc", "printf '%b' " + shellQuote(msg) + "; echo persona=" + name + "; sleep 3600"}
+}
+
+func missingHelp(id string) string {
+	switch strings.ToLower(strings.TrimSpace(id)) {
+	case "claude":
+		return "claude not found on PATH. Install Claude Code, then restart fleeting:\\n  curl -fsSL https://claude.ai/install.sh | bash\\n"
+	case "codex":
+		return "codex not found on PATH. Install Codex, then restart fleeting:\\n  npm install -g @openai/codex\\n"
+	case "cursor":
+		return "Cursor agent CLI not found on PATH (tried agent, cursor-agent, cursor).\\n"
+	case "pi":
+		return "pi not found on PATH.\\n"
+	default:
+		return "omp not found on PATH. Install Oh My Pi, then restart fleeting up:\\n  curl -fsSL https://omp.sh/install | sh\\n"
+	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// IDFromBin maps a spawned argv0 basename to a catalog id.
+func IDFromBin(base string) string {
+	switch strings.ToLower(filepath.Base(base)) {
+	case "claude":
+		return "claude"
+	case "codex":
+		return "codex"
+	case "agent", "cursor-agent", "cursor":
+		return "cursor"
+	case "omp":
+		return "omp"
+	case "pi":
+		return "pi"
+	default:
+		return ""
+	}
+}
+
+func sessionRoot(fleetingHome, name string) string {
+	return filepath.Join(fleetingHome, "sessions", name)
+}
+
+func ClaudeConfigDir(fleetingHome, name string) string {
+	return filepath.Join(sessionRoot(fleetingHome, name), "claude")
+}
+
+func CodexHome(fleetingHome, name string) string {
+	return filepath.Join(sessionRoot(fleetingHome, name), "codex")
+}
+
+// PrepareSession creates per-persona dirs and returns extra env for the child.
+// Claude uses CLAUDE_CONFIG_DIR; Codex uses CODEX_HOME.
+func PrepareSession(fleetingHome, id, name string) []string {
+	id = strings.ToLower(strings.TrimSpace(id))
+	_ = os.MkdirAll(sessionRoot(fleetingHome, name), 0o755)
+	switch id {
+	case "claude":
+		dir := ClaudeConfigDir(fleetingHome, name)
+		_ = os.MkdirAll(dir, 0o755)
+		return []string{"CLAUDE_CONFIG_DIR=" + dir}
+	case "codex":
+		dir := CodexHome(fleetingHome, name)
+		_ = os.MkdirAll(dir, 0o755)
+		return []string{"CODEX_HOME=" + dir}
+	default:
+		return nil
+	}
+}
+
+// LockDirs are scanned for stale .lock/.pid/.sock files when a cell reaps.
+func LockDirs(fleetingHome, name string) []string {
+	dirs := []string{
+		sessionRoot(fleetingHome, name),
+		ClaudeConfigDir(fleetingHome, name),
+		CodexHome(fleetingHome, name),
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".omp", "profiles", name))
+	}
+	return dirs
 }
 
 func canExec(p string) bool {

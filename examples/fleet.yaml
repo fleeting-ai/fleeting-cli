@@ -1,4 +1,4 @@
-# Empty cmd: launches omp --profile <name>
+# Empty cmd: launches the harness (omp --profile <name>, claude, or codex)
 operator: richard
 grid: 3
 

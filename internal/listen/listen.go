@@ -17,6 +17,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
 	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"github.com/richard-ginsberg/fleeting/internal/presence"
 	"github.com/richard-ginsberg/fleeting/internal/spool"
 )
@@ -145,29 +146,22 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	if guid == "" {
 		guid = fmt.Sprintf("%s-%d", a.Name, time.Now().UnixNano())
 	}
-	if a.Harness == "" {
-		base := ""
-		if len(a.Cmd) > 0 {
-			base = filepath.Base(a.Cmd[0])
-		}
-		switch base {
-		case "omp":
-			a.Harness = "omp"
-		case "pi":
-			a.Harness = "pi"
-		}
+	if a.Harness == "" && len(a.Cmd) > 0 {
+		a.Harness = harness.IDFromBin(a.Cmd[0])
 	}
 	cmd := exec.Command(a.Cmd[0], a.Cmd[1:]...)
-	cmd.Env = append(os.Environ(),
-		"FLEETING_NAME="+a.Name,
-		"FLEETING_LANE="+a.Lane,
-		"FLEETING_ROLE="+a.Role,
-		"FLEETING_FLEET="+fleetID,
-		"FLEETING_GUID="+guid,
-		"OMP_PROFILE="+a.Name,
+	env := []string{
+		"FLEETING_NAME=" + a.Name,
+		"FLEETING_LANE=" + a.Lane,
+		"FLEETING_ROLE=" + a.Role,
+		"FLEETING_FLEET=" + fleetID,
+		"FLEETING_GUID=" + guid,
+		"OMP_PROFILE=" + a.Name,
 		"TERM=xterm-256color",
 		"COLORTERM=truecolor",
-	)
+	}
+	env = append(env, harness.PrepareSession(config.Dir(), a.Harness, a.Name)...)
+	cmd.Env = append(os.Environ(), env...)
 	_ = os.MkdirAll(filepath.Join(config.Dir(), "sessions", a.Name), 0o755)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
@@ -345,10 +339,7 @@ func clearStaleLocks(name string) {
 	if name == "" {
 		return
 	}
-	dirs := []string{filepath.Join(config.Dir(), "sessions", name)}
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, ".omp", "profiles", name))
-	}
+	dirs := harness.LockDirs(config.Dir(), name)
 	for _, dir := range dirs {
 		ents, err := os.ReadDir(dir)
 		if err != nil {

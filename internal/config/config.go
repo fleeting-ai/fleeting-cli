@@ -3,10 +3,10 @@ package config
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"gopkg.in/yaml.v3"
 )
 
@@ -116,24 +116,24 @@ func (f *File) Validate() error {
 	return nil
 }
 
-// DefaultCmd launches Oh My Pi with an isolated profile named after the persona.
-// Do not pass --alias: that only writes a shell shortcut to bashrc and exits.
+// DefaultCmd launches the agent's harness when cmd: is omitted.
+// Oh My Pi uses --profile <persona> (never --alias). Claude Code and Codex
+// get a bare argv; isolation is CLAUDE_CONFIG_DIR / CODEX_HOME at spawn.
 func DefaultCmd(a *Agent) []string {
-	omp, err := exec.LookPath("omp")
-	if err != nil {
-		msg := "omp not found on PATH. Install Oh My Pi, then restart fleeting up:\\n  curl -fsSL https://omp.sh/install | sh\\n"
-		return []string{"bash", "-lc", "printf '%b' " + shellQuote(msg) + "; echo persona=" + a.Name + "; sleep 3600"}
+	id := strings.ToLower(strings.TrimSpace(a.Harness))
+	if id == "" {
+		id = "omp"
 	}
-	return []string{omp, "--profile", a.Name}
-}
-
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	in, err := harness.Resolve(id)
+	if err != nil {
+		return harness.MissingCmd(id, a.Name)
+	}
+	return in.CmdForAgent(a.Name)
 }
 
 func Example() string {
 	return `# Fleeting fleet file
-# Empty cmd: launches omp --profile <name> (isolated OMP state per persona)
+# Empty cmd: launches the harness binary (omp --profile <name>; claude; codex)
 operator: richard
 grid: 3
 

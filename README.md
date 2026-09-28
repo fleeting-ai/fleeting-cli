@@ -4,7 +4,7 @@ One CLI pane of glass for many Oh My Pi (and later other) agent TUIs. Live PTY c
 
 The **daemon** owns every agent PTY and stays connected to model providers on a stable Linux box. Your SSH/PuTTY/WSL client is just an attachable TUI: close the laptop, lose the tether, or detach on purpose — agents keep running. Reattach later like GNU screen.
 
-Each occupied cell runs `omp --profile <4-letter-name>` so that persona has its own OMP state (`~/.omp/profiles/<name>/`). `--alias` is a shell-shortcut installer and must not be used here. Empty cells stay empty until you launch a CLI into them. Resize the outer window and each inner PTY is SIGWINCH’d to match.
+Each occupied cell runs the harness for that persona. Oh My Pi is `omp --profile <4-letter-name>` so state lives in `~/.omp/profiles/<name>/` (`--alias` is a shell-shortcut installer and must not be used here). Claude Code is `claude` with `CLAUDE_CONFIG_DIR=~/.fleeting/sessions/<name>/claude`. Codex is `codex` with `CODEX_HOME=~/.fleeting/sessions/<name>/codex`. Empty cells stay empty until you launch a CLI into them. Resize the outer window and each inner PTY is SIGWINCH’d to match.
 
 ## Run as a daemon (Linux)
 
@@ -122,7 +122,7 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 
 ## Config
 
-`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`. Pi models: `~/.pi/agent/models.json`. OMP models: `~/.omp/profiles/<persona>/agent/models.yml`.
+`~/.fleeting/fleet.yaml` — omit `cmd:` to launch the `harness:` binary (`omp --profile <name>`, `claude`, `codex`, Cursor `agent`/`cursor-agent`/`cursor`, or `pi`). Override `cmd:` when you need extra flags. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`. Pi models: `~/.pi/agent/models.json`. OMP models: `~/.omp/profiles/<persona>/agent/models.yml`. Claude/Codex persona dirs: `~/.fleeting/sessions/<name>/{claude,codex}`.
 
 ## Local Pi / OMP models (F5)
 

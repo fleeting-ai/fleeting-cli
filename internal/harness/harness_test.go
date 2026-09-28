@@ -3,6 +3,7 @@ package harness
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -73,6 +74,68 @@ func TestCmdForAgentOMPProfile(t *testing.T) {
 	cmd := in.CmdForAgent("luna")
 	if len(cmd) != 3 || cmd[1] != "--profile" || cmd[2] != "luna" {
 		t.Fatalf("got %v", cmd)
+	}
+}
+
+func TestCmdForAgentClaudeAndCodexBare(t *testing.T) {
+	for _, id := range []string{"claude", "codex"} {
+		in := Installed{Spec: Spec{ID: id}, Path: "/usr/bin/" + id}
+		cmd := in.CmdForAgent("luna")
+		if len(cmd) != 1 || cmd[0] != "/usr/bin/"+id {
+			t.Fatalf("%s: got %v", id, cmd)
+		}
+	}
+}
+
+func TestIDFromBin(t *testing.T) {
+	cases := map[string]string{
+		"/usr/bin/claude": "claude",
+		"codex":           "codex",
+		"agent":           "cursor",
+		"cursor-agent":    "cursor",
+		"omp":             "omp",
+		"pi":              "pi",
+		"bash":            "",
+	}
+	for in, want := range cases {
+		if got := IDFromBin(in); got != want {
+			t.Fatalf("%s: got %q want %q", in, got, want)
+		}
+	}
+}
+
+func TestPrepareSessionClaudeCodex(t *testing.T) {
+	home := t.TempDir()
+	env := PrepareSession(home, "claude", "luna")
+	if len(env) != 1 || !strings.HasPrefix(env[0], "CLAUDE_CONFIG_DIR=") {
+		t.Fatalf("claude env %v", env)
+	}
+	if _, err := os.Stat(ClaudeConfigDir(home, "luna")); err != nil {
+		t.Fatal(err)
+	}
+	env = PrepareSession(home, "codex", "nova")
+	if len(env) != 1 || !strings.HasPrefix(env[0], "CODEX_HOME=") {
+		t.Fatalf("codex env %v", env)
+	}
+	if _, err := os.Stat(CodexHome(home, "nova")); err != nil {
+		t.Fatal(err)
+	}
+	if env := PrepareSession(home, "omp", "kite"); len(env) != 0 {
+		t.Fatalf("omp should not set extra env, got %v", env)
+	}
+}
+
+func TestMissingCmdMentionsBinary(t *testing.T) {
+	cmd := MissingCmd("claude", "luna")
+	if len(cmd) != 3 || cmd[0] != "bash" {
+		t.Fatalf("got %v", cmd)
+	}
+	if !strings.Contains(cmd[2], "claude not found") {
+		t.Fatalf("help %s", cmd[2])
+	}
+	cmd = MissingCmd("codex", "nova")
+	if !strings.Contains(cmd[2], "codex not found") {
+		t.Fatalf("help %s", cmd[2])
 	}
 }
 
