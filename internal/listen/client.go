@@ -143,6 +143,12 @@ func (c *Client) Spawn(fleetID string, a config.Agent) error {
 	return err
 }
 
+func (c *Client) Replace(fleetID string, a config.Agent) error {
+	ag := a
+	_, err := c.rpc(Packet{Op: "replace", Fleet: fleetID, Agent: &ag})
+	return err
+}
+
 func (c *Client) Restart(name string) error {
 	_, err := c.rpc(Packet{Op: "restart", Name: name})
 	return err

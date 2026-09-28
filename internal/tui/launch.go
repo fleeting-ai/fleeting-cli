@@ -12,7 +12,7 @@ import (
 
 func (m Model) openLaunch() (tea.Model, tea.Cmd) {
 	gidx := m.visualToGlobal(m.focus)
-	if m.snapAt(gidx) != nil {
+	if snap := m.snapAt(gidx); snap != nil && !harness.Placeholder(snap.Cmd, snap.Screen) {
 		m.lastErr = "cell occupied — pick a blank cell"
 		m.status = ""
 		return m, nil
@@ -57,7 +57,9 @@ func (m Model) pickLaunch(i int) (tea.Model, tea.Cmd) {
 	}
 	in := m.launch[i]
 	gidx := m.visualToGlobal(m.focus)
-	if m.snapAt(gidx) != nil {
+	snap := m.snapAt(gidx)
+	replace := snap != nil && harness.Placeholder(snap.Cmd, snap.Screen)
+	if snap != nil && !replace {
 		m.lastErr = "cell occupied"
 		m.mode = ""
 		m.launch = nil
@@ -81,7 +83,14 @@ func (m Model) pickLaunch(i int) (tea.Model, tea.Cmd) {
 		Harness: in.ID,
 		Cmd:     in.CmdForAgent(name),
 	}
-	if err := m.srv.Spawn(fleetID, a); err != nil {
+	if replace {
+		if err := m.srv.Replace(fleetID, a); err != nil {
+			m.lastErr = err.Error()
+			m.mode = ""
+			m.launch = nil
+			return m, nil
+		}
+	} else if err := m.srv.Spawn(fleetID, a); err != nil {
 		m.lastErr = err.Error()
 		m.mode = ""
 		m.launch = nil
@@ -106,6 +115,9 @@ func (m Model) pickLaunch(i int) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) nameForLaunch(gidx int) string {
+	if snap := m.snapAt(gidx); snap != nil && harness.Placeholder(snap.Cmd, snap.Screen) {
+		return snap.Name
+	}
 	if c, ok := m.extras[gidx]; ok && c.Name != "" {
 		return c.Name
 	}

@@ -176,6 +176,9 @@ func TestLooksLikeMissingCmd(t *testing.T) {
 	if LooksLikeMissingCmd([]string{"/home/u/.local/bin/omp", "--profile", "risa"}) {
 		t.Fatal("real cmd")
 	}
+	if !Placeholder(nil, "omp not found on PATH.\n") {
+		t.Fatal("screen hint")
+	}
 }
 
 func TestCatalogSplitsOMPAndPi(t *testing.T) {

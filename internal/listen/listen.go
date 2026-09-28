@@ -215,6 +215,40 @@ func (s *Server) Spawn(fleetID string, a config.Agent) error {
 	return s.spawn(fleetID, a)
 }
 
+// Replace kills a live session of the same name (placeholder or otherwise) and starts a.
+func (s *Server) Replace(fleetID string, a config.Agent) error {
+	if a.Name == "" {
+		return fmt.Errorf("replace needs name")
+	}
+	s.mu.Lock()
+	se := s.sess[a.Name]
+	if se != nil {
+		if se.Cmd != nil && se.Cmd.Process != nil {
+			_ = se.Cmd.Process.Kill()
+		}
+		s.mu.Unlock()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			s.mu.Lock()
+			_, ok := s.sess[a.Name]
+			s.mu.Unlock()
+			if !ok {
+				return s.spawn(fleetID, a)
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+		s.mu.Lock()
+		se = s.sess[a.Name]
+		delete(s.sess, a.Name)
+		s.mu.Unlock()
+		dropSession(se)
+		clearStaleLocks(a.Name)
+		return s.spawn(fleetID, a)
+	}
+	s.mu.Unlock()
+	return s.spawn(fleetID, a)
+}
+
 // Restart kills a live session and starts the same agent again (Pi model reload).
 func (s *Server) Restart(name string) error {
 	s.mu.Lock()
@@ -225,21 +259,8 @@ func (s *Server) Restart(name string) error {
 	}
 	a := se.Agent
 	fleet := se.FleetID
-	if se.Cmd != nil && se.Cmd.Process != nil {
-		_ = se.Cmd.Process.Kill()
-	}
 	s.mu.Unlock()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		s.mu.Lock()
-		_, ok := s.sess[name]
-		s.mu.Unlock()
-		if !ok {
-			return s.Spawn(fleet, a)
-		}
-		time.Sleep(30 * time.Millisecond)
-	}
-	return fmt.Errorf("timeout restarting %s", name)
+	return s.Replace(fleet, a)
 }
 
 func (se *Session) readLoop() {
@@ -503,6 +524,13 @@ func (s *Server) dispatch(jc *jsonConn, w Packet) bool {
 			break
 		}
 		err := s.Spawn(w.Fleet, *w.Agent)
+		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
+	case "replace":
+		if w.Agent == nil {
+			_ = jc.send(Packet{OK: false, Err: "replace needs agent"})
+			break
+		}
+		err := s.Replace(w.Fleet, *w.Agent)
 		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
 	case "restart":
 		err := s.Restart(w.Name)

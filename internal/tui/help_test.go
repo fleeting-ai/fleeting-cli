@@ -20,6 +20,9 @@ func (h *helpHost) Write(_ string, data []byte) error {
 	return nil
 }
 func (h *helpHost) Spawn(string, config.Agent) error { return nil }
+func (h *helpHost) Replace(string, config.Agent) error {
+	return nil
+}
 func (h *helpHost) Restart(string) error             { return nil }
 func (h *helpHost) Resize(int, int)                  {}
 func (h *helpHost) ResizeSession(string, int, int)   {}

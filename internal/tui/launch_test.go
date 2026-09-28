@@ -31,6 +31,31 @@ func TestSnapAtBlankWhenDead(t *testing.T) {
 	}
 }
 
+func TestOpenLaunchAllowsPlaceholder(t *testing.T) {
+	cmd := harness.MissingCmd("omp", "hiro")
+	hiro := listen.Snapshot{Name: "hiro", Alive: true, Cmd: cmd, Screen: "omp not found on PATH"}
+	m := Model{
+		grid:  3,
+		focus: 4, // B2
+		cfg: &config.File{Grid: 3, Fleets: []config.Fleet{{
+			Agents: []config.Agent{
+				{Name: "nova"}, {Name: "bolt"}, {Name: "kite"},
+				{Name: "veil"}, {Name: "hiro"}, {Name: "risa"},
+			},
+		}}},
+		snaps:  []listen.Snapshot{hiro},
+		byName: map[string]listen.Snapshot{"hiro": hiro},
+	}
+	next, _ := m.openLaunch()
+	sm := next.(Model)
+	if sm.lastErr != "" {
+		t.Fatalf("placeholder should be replaceable, err=%s", sm.lastErr)
+	}
+	if sm.mode != "launch" {
+		t.Fatalf("mode %q", sm.mode)
+	}
+}
+
 func TestNameForLaunchReusesDeadCellPersona(t *testing.T) {
 	m := Model{
 		grid: 3,

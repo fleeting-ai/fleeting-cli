@@ -80,3 +80,15 @@ func waitFile(t *testing.T, path, want string) {
 	}
 	t.Fatalf("%s: got %q want %q", path, strings.TrimSpace(string(body)), want)
 }
+
+func TestReplaceKillsPlaceholder(t *testing.T) {
+	s := New(&config.File{}, t.TempDir())
+	a := config.Agent{Name: "risa", Cmd: []string{"sleep", "30"}}
+	if err := s.Spawn("f", a); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Replace("f", config.Agent{Name: "risa", Cmd: []string{"true"}}); err != nil {
+		t.Fatal(err)
+	}
+	waitGone(t, s, "risa")
+}

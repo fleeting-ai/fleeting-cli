@@ -8,6 +8,7 @@ type Host interface {
 	Snapshots() []Snapshot
 	Write(name string, data []byte) error
 	Spawn(fleetID string, a config.Agent) error
+	Replace(fleetID string, a config.Agent) error
 	Restart(name string) error
 	Resize(cols, rows int)
 	ResizeSession(name string, cols, rows int)

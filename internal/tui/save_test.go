@@ -2,10 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"github.com/richard-ginsberg/fleeting/internal/listen"
 	"github.com/richard-ginsberg/fleeting/internal/workspace"
 )
@@ -60,15 +62,20 @@ func TestCaptureFillsHarnessFromFleet(t *testing.T) {
 }
 
 type restoreHost struct {
-	snaps []listen.Snapshot
-	spawn int
-	err   error
+	snaps   []listen.Snapshot
+	spawn   int
+	replace int
+	err     error
 }
 
 func (h *restoreHost) Snapshots() []listen.Snapshot { return h.snaps }
 func (h *restoreHost) Write(string, []byte) error   { return nil }
 func (h *restoreHost) Spawn(string, config.Agent) error {
 	h.spawn++
+	return h.err
+}
+func (h *restoreHost) Replace(string, config.Agent) error {
+	h.replace++
 	return h.err
 }
 func (h *restoreHost) Restart(string) error                   { return nil }
@@ -114,5 +121,36 @@ func TestRestoreKeepsLiveAdHocOnC1(t *testing.T) {
 	}
 	if m.orderedNames()[6] != "luna" {
 		t.Fatalf("ordered names %v", m.orderedNames())
+	}
+}
+
+func TestUpgradePlaceholdersReplacesOMP(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	omp := filepath.Join(dir, "omp")
+	if err := os.WriteFile(omp, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	h := &restoreHost{snaps: []listen.Snapshot{{
+		Name:    "risa",
+		Fleet:   "local-core",
+		Harness: "omp",
+		Alive:   true,
+		Cmd:     harness.MissingCmd("omp", "risa"),
+		Screen:  "omp not found on PATH",
+	}}}
+	m := Model{
+		srv: h,
+		cfg: &config.File{Fleets: []config.Fleet{{
+			ID: "local-core",
+			Agents: []config.Agent{
+				{Name: "risa", Role: "foreman", Lane: "pace", Harness: "omp", Hub: true},
+			},
+		}}},
+	}
+	m.upgradePlaceholders()
+	if h.replace != 1 {
+		t.Fatalf("replace=%d", h.replace)
 	}
 }

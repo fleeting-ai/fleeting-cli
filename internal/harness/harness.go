@@ -130,6 +130,14 @@ func LooksLikeMissingCmd(cmd []string) bool {
 	return cmd[0] == "bash" && strings.Contains(cmd[2], "not found on PATH")
 }
 
+// Placeholder is the keep-alive cell that printed the install hint.
+func Placeholder(cmd []string, screen string) bool {
+	if LooksLikeMissingCmd(cmd) {
+		return true
+	}
+	return strings.Contains(screen, "not found on PATH")
+}
+
 // CmdForAgent is the argv to spawn. OMP gets --profile <persona>, never --alias.
 func (in Installed) CmdForAgent(name string) []string {
 	if in.ID == "omp" || filepath.Base(in.Path) == "omp" {

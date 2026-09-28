@@ -65,6 +65,7 @@ func New(srv listen.Host, cfg *config.File, home string) Model {
 		extras: map[int]workspace.Cell{},
 	}
 	m.restoreWorkspace()
+	m.upgradePlaceholders()
 	return m
 }
 
@@ -127,6 +128,46 @@ func (m *Model) restoreWorkspace() {
 		_ = m.srv.Spawn(fleet, a)
 	}
 	m.savedFP = workspace.Fingerprint(m.workspaceFile())
+}
+
+func (m *Model) upgradePlaceholders() {
+	if m.srv == nil {
+		return
+	}
+	for _, s := range m.srv.Snapshots() {
+		if !s.Alive || !harness.Placeholder(s.Cmd, s.Screen) {
+			continue
+		}
+		a := config.Agent{
+			Name:    s.Name,
+			Role:    s.Role,
+			Lane:    s.Lane,
+			Harness: s.Harness,
+			Cmd:     s.Cmd,
+			Hub:     s.Hub,
+			Peers:   s.Peers,
+		}
+		if fa := m.agentByName(s.Name); fa != nil {
+			a.Role = fa.Role
+			a.Lane = fa.Lane
+			a.Harness = fa.Harness
+			a.Hub = fa.Hub
+			a.Peers = fa.Peers
+		}
+		if a.Harness == "" {
+			a.Harness = "omp"
+		}
+		in, err := harness.Resolve(a.Harness)
+		if err != nil {
+			continue
+		}
+		a.Cmd = in.CmdForAgent(a.Name)
+		fleet := s.Fleet
+		if fleet == "" && len(m.cfg.Fleets) > 0 {
+			fleet = m.cfg.Fleets[m.hubIdx].ID
+		}
+		_ = m.srv.Replace(fleet, a)
+	}
 }
 
 type kickMsg struct{}

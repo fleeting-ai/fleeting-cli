@@ -50,6 +50,9 @@ func (m Model) captureLiveCells() Model {
 		if !ok {
 			continue
 		}
+		if harness.Placeholder(snap.Cmd, snap.Screen) {
+			continue
+		}
 		cur := m.extras[g]
 		cur.Global = g
 		cur = fillCell(cur, snap, m.agentByName(name))
