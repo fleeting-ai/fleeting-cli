@@ -13,7 +13,19 @@ import (
 type File struct {
 	Operator string  `yaml:"operator"`
 	Grid     int     `yaml:"grid"`
+	Bus      Bus     `yaml:"bus"`
+	Teams    []Team  `yaml:"teams"`
 	Fleets   []Fleet `yaml:"fleets"`
+}
+
+type Bus struct {
+	URL string `yaml:"url"`
+	DB  string `yaml:"db"`
+}
+
+type Team struct {
+	ID      string   `yaml:"id"`
+	Members []string `yaml:"members"`
 }
 
 type Fleet struct {
@@ -30,7 +42,23 @@ type Agent struct {
 	Cmd        []string `yaml:"cmd"`
 	Hub        bool     `yaml:"hub"`
 	Peers      []string `yaml:"peers"`
+	Rank       int      `yaml:"rank"`
 	ResumeGUID string   `yaml:"resume"`
+}
+
+// RankOf is yaml rank if set, else the role default (foreman 50, judge 40, else 10).
+func RankOf(role string, rank int) int {
+	if rank > 0 {
+		return rank
+	}
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "foreman":
+		return 50
+	case "judge":
+		return 40
+	default:
+		return 10
+	}
 }
 
 func Dir() string {
@@ -111,9 +139,103 @@ func (f *File) Validate() error {
 			if len(a.Cmd) == 0 {
 				a.Cmd = DefaultCmd(a)
 			}
+			a.Rank = RankOf(a.Role, a.Rank)
+		}
+	}
+	return f.validateTeams(names)
+}
+
+func (f *File) validateTeams(names map[string]bool) error {
+	seen := map[string]bool{}
+	for i := range f.Teams {
+		t := &f.Teams[i]
+		id := strings.ToLower(strings.TrimSpace(t.ID))
+		if !validTeamID(id) {
+			return fmt.Errorf("team[%d] id %q must be lowercase letters, digits, hyphen", i, t.ID)
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate team id %s", id)
+		}
+		seen[id] = true
+		t.ID = id
+		for j, m := range t.Members {
+			n := strings.ToLower(strings.TrimSpace(m))
+			if len(n) != 4 {
+				return fmt.Errorf("team %s member %q must be a 4-letter name", id, m)
+			}
+			if !names[n] {
+				return fmt.Errorf("team %s unknown member %s", id, n)
+			}
+			t.Members[j] = n
 		}
 	}
 	return nil
+}
+
+func validTeamID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for i, r := range id {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			continue
+		}
+		if r == '-' && i > 0 {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func (f *File) Agent(name string) *Agent {
+	name = strings.ToLower(strings.TrimSpace(name))
+	for i := range f.Fleets {
+		for j := range f.Fleets[i].Agents {
+			if f.Fleets[i].Agents[j].Name == name {
+				return &f.Fleets[i].Agents[j]
+			}
+		}
+	}
+	return nil
+}
+
+func (f *File) TeamsOf(name string) []string {
+	name = strings.ToLower(strings.TrimSpace(name))
+	var out []string
+	for _, t := range f.Teams {
+		for _, m := range t.Members {
+			if m == name {
+				out = append(out, t.ID)
+				break
+			}
+		}
+	}
+	return out
+}
+
+func (f *File) Team(id string) *Team {
+	id = strings.ToLower(strings.TrimSpace(id))
+	for i := range f.Teams {
+		if f.Teams[i].ID == id {
+			return &f.Teams[i]
+		}
+	}
+	return nil
+}
+
+func (f *File) InTeam(name, team string) bool {
+	t := f.Team(team)
+	if t == nil {
+		return false
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	for _, m := range t.Members {
+		if m == name {
+			return true
+		}
+	}
+	return false
 }
 
 // DefaultCmd launches the agent's harness when cmd: is omitted.
@@ -137,6 +259,16 @@ func Example() string {
 operator: richard
 grid: 3
 
+bus:
+  url: amqp://guest:guest@127.0.0.1:5672/
+  db: sqlite://~/.fleeting/bus.db
+
+teams:
+  - id: core
+    members: [risa, hiro, nova, bolt, kite, veil]
+  - id: review
+    members: [hiro, veil]
+
 fleets:
   - id: local-core
     goal: land the first fleeting slice
@@ -146,6 +278,7 @@ fleets:
         lane: ux
         harness: omp
         hub: false
+        rank: 10
         peers: [risa]
       - name: bolt
         role: worker
@@ -173,6 +306,7 @@ fleets:
         lane: pace
         harness: omp
         hub: true
+        rank: 50
         peers: [hiro, nova, bolt, kite, veil]
 `
 }

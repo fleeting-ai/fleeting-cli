@@ -21,6 +21,8 @@ func TestParseScreenFlags(t *testing.T) {
 		{[]string{"daemon"}, "daemon", false},
 		{[]string{"down"}, "down", false},
 		{[]string{"up", "-d"}, "up", true},
+		{[]string{"send", "--from", "nova"}, "send", false},
+		{[]string{"listen", "--as", "nova"}, "listen", false},
 	}
 	for _, c := range cases {
 		a, err := Parse(c.in)

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/richard-ginsberg/fleeting/internal/bus"
 	"github.com/richard-ginsberg/fleeting/internal/config"
 	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"github.com/richard-ginsberg/fleeting/internal/listen"
@@ -78,12 +79,14 @@ func (h *restoreHost) Replace(string, config.Agent) error {
 	h.replace++
 	return h.err
 }
-func (h *restoreHost) Restart(string) error                   { return nil }
-func (h *restoreHost) Resize(int, int)                        {}
-func (h *restoreHost) ResizeSession(string, int, int)         {}
-func (h *restoreHost) RoutePublic(string, string, string) error {
-	return nil
+func (h *restoreHost) Restart(string) error           { return nil }
+func (h *restoreHost) Resize(int, int)                {}
+func (h *restoreHost) ResizeSession(string, int, int) {}
+func (h *restoreHost) RouteMail(bus.Send) error       { return nil }
+func (h *restoreHost) Coord(p listen.Packet) (listen.Packet, error) {
+	return listen.Packet{OK: true}, nil
 }
+func (h *restoreHost) Status() listen.Status { return listen.Status{} }
 
 func TestRestoreKeepsLiveAdHocOnC1(t *testing.T) {
 	dir := t.TempDir()

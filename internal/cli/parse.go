@@ -7,11 +7,12 @@ import (
 
 // Action is the parsed fleeting command line (screen-like flags + verbs).
 type Action struct {
-	Kind    string // up, attach, list, detach, daemon, down, onboard, declare, help
+	Kind    string // up, attach, list, detach, daemon, down, onboard, declare, send, listen, log, card, rules, memory, bus, help
 	Steal   bool
 	GUID    string
 	Go      bool
 	Declare []string
+	Args    []string
 }
 
 func Parse(args []string) (Action, error) {
@@ -48,6 +49,10 @@ func Parse(args []string) (Action, error) {
 		case "declare":
 			a.Kind = "declare"
 			a.Declare = append([]string{}, args[i+1:]...)
+			return a, nil
+		case "send", "listen", "log", "card", "rules", "memory", "bus":
+			a.Kind = s
+			a.Args = append([]string{}, args[i+1:]...)
 			return a, nil
 		case "r":
 			hasR = true

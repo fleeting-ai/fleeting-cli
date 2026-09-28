@@ -16,10 +16,10 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
+	"github.com/richard-ginsberg/fleeting/internal/bus"
 	"github.com/richard-ginsberg/fleeting/internal/config"
 	"github.com/richard-ginsberg/fleeting/internal/harness"
 	"github.com/richard-ginsberg/fleeting/internal/presence"
-	"github.com/richard-ginsberg/fleeting/internal/spool"
 )
 
 // Server is the local Fleeting listener. Remote hosts will speak the same
@@ -37,6 +37,10 @@ type Server struct {
 	replayMu sync.Mutex
 	replay   []ReplayFrame
 	stop     chan struct{}
+	store    bus.Store
+	broker   *bus.Broker
+	busErr   error
+	storeErr error
 }
 
 type jsonConn struct {
@@ -109,6 +113,8 @@ func (s *Server) Start(ctx context.Context) error {
 	s.ln = ln
 	_ = os.WriteFile(config.PidPath(), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
 
+	s.startBus(ctx)
+
 	for _, fl := range s.cfg.Fleets {
 		for _, a := range fl.Agents {
 			if err := s.spawn(fl.ID, a); err != nil {
@@ -146,6 +152,9 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	if guid == "" {
 		guid = fmt.Sprintf("%s-%d", a.Name, time.Now().UnixNano())
 	}
+	if a.Rank == 0 {
+		a.Rank = config.RankOf(a.Role, a.Rank)
+	}
 	if a.Harness == "" && len(a.Cmd) > 0 {
 		a.Harness = harness.IDFromBin(a.Cmd[0])
 	}
@@ -155,6 +164,7 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	cmd := exec.Command(a.Cmd[0], a.Cmd[1:]...)
 	env := []string{
 		"FLEETING_NAME=" + a.Name,
+		"FLEETING_AGENT=" + a.Name,
 		"FLEETING_LANE=" + a.Lane,
 		"FLEETING_ROLE=" + a.Role,
 		"FLEETING_FLEET=" + fleetID,
@@ -191,6 +201,7 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	s.mu.Unlock()
 	go se.readLoop()
 	go se.waitLoop(s)
+	s.onSpawnBus(a)
 	return nil
 }
 
@@ -396,6 +407,7 @@ func (s *Server) Reap(name string) {
 	s.mu.Unlock()
 	dropSession(se)
 	clearStaleLocks(name)
+	s.onReapBus(name)
 }
 
 func (s *Server) harvestDead() {
@@ -413,6 +425,13 @@ func (s *Server) harvestDead() {
 }
 
 func (s *Server) KillAll() {
+	if s.broker != nil {
+		s.broker.Close()
+	}
+	if s.store != nil {
+		_ = s.store.Close()
+		s.store = nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, se := range s.sess {
@@ -516,8 +535,15 @@ func (s *Server) dispatch(jc *jsonConn, w Packet) bool {
 		err := s.Write(w.Name, []byte(w.Data))
 		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
 	case "msg":
-		err := s.RoutePublic(w.From, w.To, w.Body)
+		err := s.RouteMail(bus.Send{From: w.From, To: w.To, Body: w.Body, Action: w.Action, Team: w.Team, Thread: w.Thread, ReplyTo: w.ReplyTo})
 		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
+	case "coord":
+		p, err := s.Coord(w)
+		if err != nil {
+			_ = jc.send(Packet{OK: false, Op: "coord", Kind: w.Kind, Err: err.Error()})
+			break
+		}
+		_ = jc.send(p)
 	case "spawn":
 		if w.Agent == nil {
 			_ = jc.send(Packet{OK: false, Err: "spawn needs agent"})
@@ -616,12 +642,17 @@ func (s *Server) Status() Status {
 	for _, sn := range snaps {
 		names = append(names, sn.Name)
 	}
+	busLine, storeLine, busURL, storeURL := s.busStatus()
 	return Status{
 		PID:      os.Getpid(),
 		Socket:   s.path,
 		Attached: s.Attached(),
 		Agents:   len(snaps),
 		Names:    names,
+		Bus:      busLine,
+		Store:    storeLine,
+		BusURL:   busURL,
+		StoreURL: storeURL,
 	}
 }
 
@@ -642,35 +673,4 @@ func errstr(err error) string {
 		return ""
 	}
 	return err.Error()
-}
-
-func (s *Server) RoutePublic(from, to, body string) error {
-	s.mu.Lock()
-	src := s.sess[from]
-	dst := s.sess[to]
-	s.mu.Unlock()
-	if src == nil || dst == nil {
-		return fmt.Errorf("unknown endpoint")
-	}
-	allowed := false
-	for _, p := range src.Agent.Peers {
-		if p == to {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
-		return fmt.Errorf("denied: %s cannot speak to %s (default deny)", from, to)
-	}
-	line := fmt.Sprintf("\r\n[fleeting %s→%s] %s\r\n", from, to, body)
-	if err := s.Write(to, []byte(line)); err != nil {
-		return err
-	}
-	return spool.Append(s.home, spool.Event{
-		Kind: "msg",
-		From: from,
-		To:   to,
-		Body: body,
-		At:   time.Now(),
-	})
 }

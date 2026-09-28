@@ -90,7 +90,7 @@ go run ./cmd/fleeting        # or: fleeting daemon, then attach
 
 `go run` is especially easy to get wrong: the first run may have spawned `…/go-build/…/fleeting daemon` from an old checkout. `-r` will happily reattach to that. Always `down` after pulling harness changes.
 
-The daemon often does **not** load `.bashrc`, so `~/.local/bin` (where `omp` usually lives) can be missing from PATH even though `which omp` works in your shell. Fleeting now searches `~/.local/bin` (and a few other user bins) when resolving harnesses and prepends them to each agent PATH.
+The daemon often does **not** load `.bashrc`, so `~/.local/bin` (where `omp` usually lives) can be missing from PATH even though `which omp` works in your shell. Fleeting now searches `~/.local/bin` (and a few other user bins) when resolving harnesses and prepends them to each agent PATH. Fleet cells that already show `omp not found` are a live placeholder PTY — they look occupied. On attach, if `omp` is found, those placeholders are replaced with real Oh My Pi. Ctrl+O on a placeholder cell is allowed (it replaces the placeholder).
 
 ## Oh My Pi (required for cells)
 
@@ -130,7 +130,7 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | Alt+] / F2 | Next hub |
 | F3 | Shrink grid; at 3×3 zoom focus to 2×2 then 3×3 |
 | F4 | Unzoom, then grow grid |
-| Ctrl+M | Message along an allowed peer edge |
+| Ctrl+M | Bus message to a peer or `@team` (Tab cycles target, Alt+A cycles fyi/todo/order) |
 | Ctrl+C | Interrupt in the focused OMP (does not quit Fleeting) |
 | 2 / 4 / 8 / g | Replay speed 2× / 4× / 8× / 16× (while catching up) |
 | L | Jump replay to live |
@@ -142,3 +142,19 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 ## Local Pi / OMP models (F5)
 
 Focus a **Pi** or **Oh My Pi** cell — the status bar says `F5 pi-model` or `F5 omp-model`. Press **F5**. If that harness already has models, choose **1 add** or **2 edit**. Then llama.cpp / vLLM / SGLang, host, port. On **model id**, **Tab** GETs `{host}:{port}/v1/models`. Pi writes `~/.pi/agent/models.json`. OMP with `--profile kite` reads **`~/.omp/profiles/kite/agent/models.yml`**, not `~/.omp/agent/models.yml`. YAML is 2-space and omits keys OMP’s schema rejects (`samplingParams`, `thinkingTokenBudgetField`). Existing SaaS providers stay. The focused cell reloads. Use `/model` in the agent to select it.
+
+## Message bus
+
+RabbitMQ holds mail in flight. SQLite (default `~/.fleeting/bus.db`) or Postgres records consumed chat plus onboarding, rules, and shared memories. Agents never dial the broker or the database; they call the CLI with `FLEETING_AGENT`.
+
+```bash
+fleeting send --from risa --to nova --action todo -- fix the border
+fleeting listen --as nova --once
+fleeting card --as nova
+fleeting bus
+```
+
+Direct sends default-deny on `peers:`. Team sends go to `fleeting.team.<id>` then fan out to each other member's `fleeting.agent.<name>` queue. `fyi` never obligates a reply. `todo` does, and a strictly higher `rank` stamps `order: true`. `Ctrl+M` publishes on this bus and does not write the target PTY.
+
+Broker down: the grid still attaches and agents keep running. `send` returns a clear error. There is no silent PTY fallback. Store down: RabbitMQ is not acked, so mail stays in flight. A configured Postgres is never silently replaced with SQLite.
+

@@ -1,12 +1,14 @@
 package listen
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/richard-ginsberg/fleeting/internal/bus"
 	"github.com/richard-ginsberg/fleeting/internal/config"
 	"github.com/richard-ginsberg/fleeting/internal/harness"
 )
@@ -35,6 +37,25 @@ func TestSpawnSetsClaudeAndCodexHomes(t *testing.T) {
 	waitFile(t, filepath.Join(home, "codex.env"), harness.CodexHome(home, "nova"))
 
 	s.KillAll()
+}
+
+func TestRouteMailBusDown(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("FLEETING_HOME", home)
+	s := New(&config.File{Grid: 3, Fleets: []config.Fleet{{ID: "f", Agents: []config.Agent{
+		{Name: "nova", Role: "worker", Peers: []string{"risa"}, Cmd: []string{"sleep", "60"}},
+		{Name: "risa", Role: "foreman", Peers: []string{"nova"}, Cmd: []string{"sleep", "60"}},
+	}}}}, home)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := s.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer s.KillAll()
+	err := s.RouteMail(bus.Send{From: "risa", To: "nova", Body: "hi"})
+	if err == nil {
+		t.Fatal("expected bus down error")
+	}
 }
 
 func TestSpawnInfersHarnessFromClaudeBin(t *testing.T) {

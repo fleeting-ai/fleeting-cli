@@ -37,7 +37,7 @@ func helpCatalog() []helpSection {
 			{"Ctrl-A Ctrl-A", "Send ^A to the focused PTY"},
 			{"Ctrl+C", "Interrupt in the focused PTY (does not quit Fleeting)"},
 			{"Ctrl+O", "Launch menu on a blank cell"},
-			{"Ctrl+M", "Message along an allowed peer edge"},
+			{"Ctrl+M", "Bus message to a peer or team (Tab target, Alt+A action)"},
 			{"2 / 4 / 8 / g", "Replay speed 2× / 4× / 8× / 16× (catch-up; 6 = 16×)"},
 			{"L / End / Enter", "Jump replay to live"},
 			{"? / F1", "Toggle this overlay"},
