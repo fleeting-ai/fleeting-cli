@@ -8,13 +8,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-	"github.com/richard-ginsberg/fleeting/internal/bus"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/harness"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
-	"github.com/richard-ginsberg/fleeting/internal/pi"
-	"github.com/richard-ginsberg/fleeting/internal/spool"
-	"github.com/richard-ginsberg/fleeting/internal/workspace"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/pi"
+	"github.com/fleeting-ai/fleeting-cli/internal/spool"
+	"github.com/fleeting-ai/fleeting-cli/internal/workspace"
 )
 
 type Model struct {

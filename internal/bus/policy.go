@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
 )
 
 type Send struct {

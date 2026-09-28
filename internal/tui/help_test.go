@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/richard-ginsberg/fleeting/internal/bus"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
 )
 
 type helpHost struct {

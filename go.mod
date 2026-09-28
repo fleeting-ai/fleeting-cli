@@ -1,4 +1,4 @@
-module github.com/richard-ginsberg/fleeting
+module github.com/fleeting-ai/fleeting-cli
 
 go 1.22
 

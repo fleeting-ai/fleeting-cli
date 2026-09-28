@@ -1,8 +1,8 @@
 package listen
 
 import (
-	"github.com/richard-ginsberg/fleeting/internal/bus"
-	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
 )
 
 // Packet is the Unix-socket JSON protocol (one object per line).

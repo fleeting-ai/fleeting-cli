@@ -3,11 +3,11 @@ package tui
 import (
 	"testing"
 
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/harness"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
-	"github.com/richard-ginsberg/fleeting/internal/persona"
-	"github.com/richard-ginsberg/fleeting/internal/workspace"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/persona"
+	"github.com/fleeting-ai/fleeting-cli/internal/workspace"
 )
 
 func TestPersonaNextSkipsTaken(t *testing.T) {

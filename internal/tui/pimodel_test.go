@@ -3,9 +3,9 @@ package tui
 import (
 	"testing"
 
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
-	"github.com/richard-ginsberg/fleeting/internal/workspace"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/workspace"
 )
 
 func TestModelKindFollowsFocus(t *testing.T) {

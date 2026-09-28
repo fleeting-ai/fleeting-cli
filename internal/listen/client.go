@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/richard-ginsberg/fleeting/internal/bus"
-	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
 )
 
 // Client talks to a running daemon over the Unix socket.

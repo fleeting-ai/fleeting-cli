@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/harness"
-	"github.com/richard-ginsberg/fleeting/internal/persona"
-	"github.com/richard-ginsberg/fleeting/internal/workspace"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/persona"
+	"github.com/fleeting-ai/fleeting-cli/internal/workspace"
 )
 
 func (m Model) openLaunch() (tea.Model, tea.Cmd) {

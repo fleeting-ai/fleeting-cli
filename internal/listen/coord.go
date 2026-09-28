@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/richard-ginsberg/fleeting/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
 )
 
 func (s *Server) Coord(p Packet) (Packet, error) {

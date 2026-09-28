@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
 )
 
 type File struct {

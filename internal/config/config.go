@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/richard-ginsberg/fleeting/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
 	"gopkg.in/yaml.v3"
 )
 

@@ -12,11 +12,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/richard-ginsberg/fleeting/internal/cli"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
-	"github.com/richard-ginsberg/fleeting/internal/spool"
-	"github.com/richard-ginsberg/fleeting/internal/tui"
+	"github.com/fleeting-ai/fleeting-cli/internal/cli"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/spool"
+	"github.com/fleeting-ai/fleeting-cli/internal/tui"
 )
 
 func main() {

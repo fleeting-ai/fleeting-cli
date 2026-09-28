@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
 )
 
 func testWorld() World {

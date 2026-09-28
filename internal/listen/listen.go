@@ -16,10 +16,10 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
-	"github.com/richard-ginsberg/fleeting/internal/bus"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/harness"
-	"github.com/richard-ginsberg/fleeting/internal/presence"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/presence"
 )
 
 // Server is the local Fleeting listener. Remote hosts will speak the same

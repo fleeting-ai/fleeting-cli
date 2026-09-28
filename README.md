@@ -12,9 +12,12 @@ On the machine that should keep agents alive (not your laptop session):
 
 ```bash
 # once
-go install github.com/richard-ginsberg/fleeting/cmd/fleeting@latest
+go install github.com/fleeting-ai/fleeting-cli/cmd/fleeting@latest
 # or from this repo:
 go build -o fleeting ./cmd/fleeting
+
+# bus infra (RabbitMQ). SQLite is the default store — no database container needed.
+docker compose up -d
 
 fleeting onboard          # writes ~/.fleeting/fleet.yaml
 fleeting daemon           # foreground: systemd, tmux, or `nohup fleeting daemon &`
@@ -145,7 +148,51 @@ Focus a **Pi** or **Oh My Pi** cell — the status bar says `F5 pi-model` or `F5
 
 ## Message bus
 
-RabbitMQ holds mail in flight. SQLite (default `~/.fleeting/bus.db`) or Postgres records consumed chat plus onboarding, rules, and shared memories. Agents never dial the broker or the database; they call the CLI with `FLEETING_AGENT`.
+RabbitMQ holds mail in flight. SQLite (default `~/.fleeting/bus.db`) records consumed chat plus onboarding, rules, and shared memories. Postgres is optional. Agents never dial the broker or the database; they call the CLI with `FLEETING_AGENT`.
+
+### Infra (Docker)
+
+RabbitMQ is the only extra process for the bus. From this repo:
+
+```bash
+docker compose up -d                 # RabbitMQ on :5672, management UI on :15672
+# guest / guest  — same default as examples/fleet.yaml
+```
+
+Or build the image yourself:
+
+```bash
+docker build -t fleeting-rabbitmq docker/rabbitmq
+docker run -d --name fleeting-rabbitmq -p 5672:5672 -p 15672:15672 fleeting-rabbitmq
+```
+
+URL, first hit wins: `FLEETING_AMQP`, then `bus.url` in `fleet.yaml`, then `amqp://guest:guest@127.0.0.1:5672/`. After the container is up:
+
+```bash
+fleeting down    # if a daemon is already running
+fleeting daemon  # or: fleeting
+fleeting bus     # broker should read "up"
+```
+
+The store stays SQLite unless you opt in. Do not start Postgres for a normal install.
+
+Optional Postgres (drop-in for the same store; never a silent fallback):
+
+```bash
+docker compose --profile postgres up -d
+# or:
+docker build -t fleeting-postgres docker/postgres
+docker run -d --name fleeting-postgres -p 5432:5432 fleeting-postgres
+```
+
+Then point the daemon at it (`postgres://fleeting:fleeting@127.0.0.1:5432/fleeting` is the container default — change the password outside a lab):
+
+```bash
+export FLEETING_DB='postgres://fleeting:fleeting@127.0.0.1:5432/fleeting'
+# or set bus.db: in ~/.fleeting/fleet.yaml
+fleeting down
+fleeting
+```
 
 ```bash
 fleeting send --from risa --to nova --action todo -- fix the border

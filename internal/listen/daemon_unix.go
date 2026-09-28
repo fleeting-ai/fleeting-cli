@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
 )
 
 func EnsureDaemon(cfg *config.File, home string) error {

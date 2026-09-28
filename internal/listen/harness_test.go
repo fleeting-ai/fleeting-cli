@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/richard-ginsberg/fleeting/internal/bus"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
 )
 
 func TestSpawnSetsClaudeAndCodexHomes(t *testing.T) {
