@@ -85,37 +85,46 @@ func (m *Model) restoreWorkspace() {
 	if len(m.cfg.Fleets) > 0 && m.hubIdx >= len(m.cfg.Fleets) {
 		m.hubIdx = 0
 	}
+	live := map[string]bool{}
+	if m.srv != nil {
+		for _, s := range m.srv.Snapshots() {
+			if s.Name != "" && s.Alive {
+				live[s.Name] = true
+			}
+		}
+	}
 	for _, c := range ws.Cells {
 		if c.Name == "" {
+			continue
+		}
+		// Map the slot first. If Spawn fails because the daemon still owns
+		// this PTY, the cell must still bind or C1 looks empty on -r.
+		m.extras[c.Global] = c
+		if m.fleetHas(c.Name) || live[c.Name] {
+			continue
+		}
+		if len(c.Cmd) == 0 {
 			continue
 		}
 		fleet := c.Fleet
 		if fleet == "" && len(m.cfg.Fleets) > 0 {
 			fleet = m.cfg.Fleets[m.hubIdx].ID
 		}
-		if !m.fleetHas(c.Name) {
-			if len(c.Cmd) == 0 {
-				continue
-			}
-			a := config.Agent{
-				Name:       c.Name,
-				Role:       c.Role,
-				Lane:       c.Lane,
-				Harness:    c.Harness,
-				Cmd:        c.Cmd,
-				ResumeGUID: c.GUID,
-			}
-			if a.Role == "" {
-				a.Role = "worker"
-			}
-			if a.Lane == "" {
-				a.Lane = c.Harness
-			}
-			if err := m.srv.Spawn(fleet, a); err != nil {
-				continue
-			}
+		a := config.Agent{
+			Name:       c.Name,
+			Role:       c.Role,
+			Lane:       c.Lane,
+			Harness:    c.Harness,
+			Cmd:        c.Cmd,
+			ResumeGUID: c.GUID,
 		}
-		m.extras[c.Global] = c
+		if a.Role == "" {
+			a.Role = "worker"
+		}
+		if a.Lane == "" {
+			a.Lane = c.Harness
+		}
+		_ = m.srv.Spawn(fleet, a)
 	}
 	m.savedFP = workspace.Fingerprint(m.workspaceFile())
 }

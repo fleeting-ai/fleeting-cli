@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/richard-ginsberg/fleeting/internal/config"
@@ -54,5 +56,63 @@ func TestCaptureFillsHarnessFromFleet(t *testing.T) {
 	}
 	if miss := c.Missing(); len(miss) != 0 {
 		t.Fatalf("still missing %v", miss)
+	}
+}
+
+type restoreHost struct {
+	snaps []listen.Snapshot
+	spawn int
+	err   error
+}
+
+func (h *restoreHost) Snapshots() []listen.Snapshot { return h.snaps }
+func (h *restoreHost) Write(string, []byte) error   { return nil }
+func (h *restoreHost) Spawn(string, config.Agent) error {
+	h.spawn++
+	return h.err
+}
+func (h *restoreHost) Restart(string) error                   { return nil }
+func (h *restoreHost) Resize(int, int)                        {}
+func (h *restoreHost) ResizeSession(string, int, int)         {}
+func (h *restoreHost) RoutePublic(string, string, string) error {
+	return nil
+}
+
+func TestRestoreKeepsLiveAdHocOnC1(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("FLEETING_WORKSPACE", filepath.Join(dir, "workspace.yaml"))
+	ws := workspace.File{
+		Grid: 3,
+		Cells: []workspace.Cell{{
+			Global:  6,
+			Name:    "luna",
+			Harness: "cursor",
+			Fleet:   "ad-hoc",
+			Cmd:     []string{"/usr/bin/agent"},
+		}},
+	}
+	if err := workspace.Save(ws); err != nil {
+		t.Fatal(err)
+	}
+	h := &restoreHost{
+		snaps: []listen.Snapshot{{Name: "luna", Harness: "cursor", Alive: true}},
+		err:   fmt.Errorf("session luna already running"),
+	}
+	m := Model{
+		srv:    h,
+		grid:   3,
+		cfg:    &config.File{Grid: 3, Fleets: []config.Fleet{{ID: "local-core", Agents: []config.Agent{{Name: "nova"}}}}},
+		extras: map[int]workspace.Cell{},
+	}
+	m.restoreWorkspace()
+	if h.spawn != 0 {
+		t.Fatalf("should not respawn live session, spawn=%d", h.spawn)
+	}
+	c, ok := m.extras[6]
+	if !ok || c.Name != "luna" {
+		t.Fatalf("C1 extras %+v", m.extras)
+	}
+	if m.orderedNames()[6] != "luna" {
+		t.Fatalf("ordered names %v", m.orderedNames())
 	}
 }

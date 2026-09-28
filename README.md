@@ -73,9 +73,22 @@ Focus an empty cell, then **Ctrl+O**. The status bar lists harnesses that are on
 | Oh My Pi | `omp` (`--profile <persona>`, never `--alias`) |
 | Pi | `pi` only — not Oh My Pi |
 
-Type `1`–`9` (or Enter if only one is installed). Esc cancels. Occupied cells refuse the menu. Ad-hoc launches pick the next unused 4-letter name from hcom’s gold list (`luna`, `nova`, …). When the process exits, the cell goes blank.
+Type `1`–`9` (or Enter if only one is installed). Esc cancels. Occupied cells refuse the menu. **Only binaries that `command -v` finds are listed.** If you see Cursor / Oh My Pi / Pi but not Claude or Codex, `claude` and `codex` are not on PATH in that shell — install them, open a new SSH session, then Ctrl+O again. You do not need a daemon restart for the menu to pick up PATH.
 
-**Ctrl+S** writes `~/.fleeting/workspace.yaml` (grid, zoom, focus, paging, and extra cells). **Ctrl+Q** detaches immediately if nothing changed; otherwise the status bar asks **s** save and quit, **n** quit without saving, **esc** cancel. `fleeting up` restores that workspace on top of `fleet.yaml`.
+Ad-hoc launches pick the next unused 4-letter name from hcom’s gold list (`luna`, `nova`, …). When the process exits, the cell goes blank.
+
+**Ctrl+S** writes `~/.fleeting/workspace.yaml` (grid, zoom, focus, paging, and extra cells). **Ctrl+Q** detaches immediately if nothing changed; otherwise the status bar asks **s** save and quit, **n** quit without saving, **esc** cancel. `fleeting -r` / `up` restores that workspace on top of `fleet.yaml`. Extra cells (e.g. Cursor on C1) stay bound to the live PTY.
+
+## Restart the daemon after pulling code
+
+`fleeting` / `go run ./cmd/fleeting` **attaches to a daemon that is already running**. Switching branches or `git pull` only updates the TUI process. The PTYs keep using the old daemon binary until you bounce it:
+
+```bash
+go run ./cmd/fleeting down
+go run ./cmd/fleeting        # or: fleeting daemon, then attach
+```
+
+`go run` is especially easy to get wrong: the first run may have spawned `…/go-build/…/fleeting daemon` from an old checkout. `-r` will happily reattach to that. Always `down` after pulling harness changes.
 
 ## Oh My Pi (required for cells)
 
