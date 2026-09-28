@@ -3,11 +3,11 @@ package tui
 import (
 	"testing"
 
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/harness"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
-	"github.com/richard-ginsberg/fleeting/internal/persona"
-	"github.com/richard-ginsberg/fleeting/internal/workspace"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/persona"
+	"github.com/fleeting-ai/fleeting-cli/internal/workspace"
 )
 
 func TestPersonaNextSkipsTaken(t *testing.T) {
@@ -28,6 +28,31 @@ func TestSnapAtBlankWhenDead(t *testing.T) {
 	}
 	if m.snapAt(0) != nil {
 		t.Fatal("dead session should leave the cell blank")
+	}
+}
+
+func TestOpenLaunchAllowsPlaceholder(t *testing.T) {
+	cmd := harness.MissingCmd("omp", "hiro")
+	hiro := listen.Snapshot{Name: "hiro", Alive: true, Cmd: cmd, Screen: "omp not found on PATH"}
+	m := Model{
+		grid:  3,
+		focus: 4, // B2
+		cfg: &config.File{Grid: 3, Fleets: []config.Fleet{{
+			Agents: []config.Agent{
+				{Name: "nova"}, {Name: "bolt"}, {Name: "kite"},
+				{Name: "veil"}, {Name: "hiro"}, {Name: "risa"},
+			},
+		}}},
+		snaps:  []listen.Snapshot{hiro},
+		byName: map[string]listen.Snapshot{"hiro": hiro},
+	}
+	next, _ := m.openLaunch()
+	sm := next.(Model)
+	if sm.lastErr != "" {
+		t.Fatalf("placeholder should be replaceable, err=%s", sm.lastErr)
+	}
+	if sm.mode != "launch" {
+		t.Fatalf("mode %q", sm.mode)
 	}
 }
 

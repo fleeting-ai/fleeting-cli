@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/richard-ginsberg/fleeting/internal/pi"
+	"github.com/fleeting-ai/fleeting-cli/internal/pi"
 )
 
 func (m Model) modelKind() string {

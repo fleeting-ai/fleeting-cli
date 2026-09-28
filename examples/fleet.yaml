@@ -1,6 +1,16 @@
-# Empty cmd: launches omp --profile <name>
+# Empty cmd: launches the harness (omp --profile <name>, claude, or codex)
 operator: richard
 grid: 3
+
+bus:
+  url: amqp://guest:guest@127.0.0.1:5672/
+  db: sqlite://~/.fleeting/bus.db
+
+teams:
+  - id: core
+    members: [risa, hiro, nova, bolt, kite, veil]
+  - id: review
+    members: [hiro, veil]
 
 fleets:
   - id: local-core
@@ -10,6 +20,7 @@ fleets:
         role: worker
         lane: ux
         harness: omp
+        rank: 10
         peers: [risa]
       - name: bolt
         role: worker
@@ -37,4 +48,5 @@ fleets:
         lane: pace
         harness: omp
         hub: true
+        rank: 50
         peers: [hiro, nova, bolt, kite, veil]

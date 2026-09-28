@@ -38,3 +38,119 @@ func TestValidateFourLetterAndDenyShape(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultCmdClaudeAndCodex(t *testing.T) {
+	dir := t.TempDir()
+	for _, bin := range []string{"claude", "codex"} {
+		p := filepath.Join(dir, bin)
+		if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", dir)
+
+	claude := DefaultCmd(&Agent{Name: "luna", Harness: "claude"})
+	if len(claude) != 1 || filepath.Base(claude[0]) != "claude" {
+		t.Fatalf("claude cmd %v", claude)
+	}
+	codex := DefaultCmd(&Agent{Name: "nova", Harness: "codex"})
+	if len(codex) != 1 || filepath.Base(codex[0]) != "codex" {
+		t.Fatalf("codex cmd %v", codex)
+	}
+}
+
+func TestValidateFillsClaudeCmd(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	p := filepath.Join(dir, "fleet.yaml")
+	body := `operator: r
+grid: 3
+fleets:
+  - id: mixed
+    agents:
+      - name: luna
+        role: worker
+        lane: code
+        harness: claude
+`
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := f.Fleets[0].Agents[0]
+	if a.Harness != "claude" || len(a.Cmd) != 1 || filepath.Base(a.Cmd[0]) != "claude" {
+		t.Fatalf("got harness=%s cmd=%v", a.Harness, a.Cmd)
+	}
+}
+
+func TestRankDefaultsAndOverride(t *testing.T) {
+	if RankOf("foreman", 0) != 50 || RankOf("judge", 0) != 40 || RankOf("worker", 0) != 10 {
+		t.Fatal("role defaults")
+	}
+	if RankOf("foreman", 7) != 7 {
+		t.Fatal("explicit rank wins")
+	}
+	f, err := Load(writeYAML(t, Example()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for i := range f.Fleets[0].Agents {
+		a := f.Fleets[0].Agents[i]
+		got[a.Name] = a.Rank
+	}
+	if got["risa"] != 50 || got["hiro"] != 40 || got["nova"] != 10 {
+		t.Fatalf("ranks %v", got)
+	}
+}
+
+func TestValidateDuplicateTeamAndUnknownMember(t *testing.T) {
+	dup := `operator: r
+grid: 3
+teams:
+  - id: core
+    members: [nova]
+  - id: core
+    members: [nova]
+fleets:
+  - id: f
+    agents:
+      - name: nova
+        role: worker
+        harness: omp
+`
+	if _, err := Load(writeYAML(t, dup)); err == nil {
+		t.Fatal("duplicate team id")
+	}
+	unk := `operator: r
+grid: 3
+teams:
+  - id: core
+    members: [zzzz]
+fleets:
+  - id: f
+    agents:
+      - name: nova
+        role: worker
+        harness: omp
+`
+	if _, err := Load(writeYAML(t, unk)); err == nil {
+		t.Fatal("unknown member")
+	}
+}
+
+func writeYAML(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "fleet.yaml")
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}

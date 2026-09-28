@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Catalog is the v1 launch menu. Oh My Pi (`omp`) is not labeled Pi.
@@ -42,6 +43,7 @@ func InstalledOnPATH() []Installed {
 }
 
 func Resolve(id string) (Installed, error) {
+	id = strings.ToLower(strings.TrimSpace(id))
 	for _, sp := range Catalog {
 		if sp.ID == id {
 			in, ok := resolve(sp)
@@ -56,25 +58,84 @@ func Resolve(id string) (Installed, error) {
 
 func resolve(sp Spec) (Installed, bool) {
 	for _, bin := range sp.Bins {
-		p, err := lookPath(bin)
+		p, err := findBin(bin)
 		if err != nil {
-			continue
-		}
-		if !canExec(p) {
 			continue
 		}
 		return Installed{
 			Spec: sp,
 			Path: p,
 			Bin:  bin,
-			Cmd:  cmdFor(sp.ID, p),
+			Cmd:  []string{p},
 		}, true
 	}
 	return Installed{}, false
 }
 
-func cmdFor(_, path string) []string {
-	return []string{path}
+// extraBinDirs are on interactive PATHs (bashrc) but often missing from a
+// daemon started without a login shell — e.g. ~/.local/bin/omp.
+func extraBinDirs() []string {
+	var dirs []string
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		dirs = append(dirs,
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, "bin"),
+			filepath.Join(home, ".bun", "bin"),
+			filepath.Join(home, ".npm-global", "bin"),
+		)
+	}
+	dirs = append(dirs, "/usr/local/bin", "/opt/homebrew/bin")
+	return dirs
+}
+
+func findBin(name string) (string, error) {
+	if p, err := lookPath(name); err == nil && canExec(p) {
+		return p, nil
+	}
+	for _, dir := range extraBinDirs() {
+		p := filepath.Join(dir, name)
+		if canExec(p) {
+			return p, nil
+		}
+	}
+	return "", os.ErrNotExist
+}
+
+// PATHEnv prepends extraBinDirs so child processes (omp, npm shims) resolve.
+func PATHEnv() string {
+	seen := map[string]bool{}
+	var parts []string
+	add := func(dir string) {
+		if dir == "" || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		parts = append(parts, dir)
+	}
+	for _, dir := range extraBinDirs() {
+		add(dir)
+	}
+	for _, dir := range strings.Split(os.Getenv("PATH"), string(os.PathListSeparator)) {
+		add(dir)
+	}
+	return strings.Join(parts, string(os.PathListSeparator))
+}
+
+// LooksLikeMissingCmd is the keep-alive placeholder when a harness was absent
+// at config load. Spawn re-resolves in case ~/.local/bin was skipped then.
+func LooksLikeMissingCmd(cmd []string) bool {
+	if len(cmd) < 3 {
+		return false
+	}
+	return cmd[0] == "bash" && strings.Contains(cmd[2], "not found on PATH")
+}
+
+// Placeholder is the keep-alive cell that printed the install hint.
+func Placeholder(cmd []string, screen string) bool {
+	if LooksLikeMissingCmd(cmd) {
+		return true
+	}
+	return strings.Contains(screen, "not found on PATH")
 }
 
 // CmdForAgent is the argv to spawn. OMP gets --profile <persona>, never --alias.
@@ -82,7 +143,94 @@ func (in Installed) CmdForAgent(name string) []string {
 	if in.ID == "omp" || filepath.Base(in.Path) == "omp" {
 		return []string{in.Path, "--profile", name}
 	}
-	return append([]string{}, in.Cmd...)
+	return []string{in.Path}
+}
+
+// MissingCmd is a placeholder PTY when the harness binary is not on PATH.
+func MissingCmd(id, name string) []string {
+	msg := missingHelp(id)
+	return []string{"bash", "-lc", "printf '%b' " + shellQuote(msg) + "; echo persona=" + name + "; sleep 3600"}
+}
+
+func missingHelp(id string) string {
+	switch strings.ToLower(strings.TrimSpace(id)) {
+	case "claude":
+		return "claude not found on PATH. Install Claude Code, then restart fleeting:\\n  curl -fsSL https://claude.ai/install.sh | bash\\n"
+	case "codex":
+		return "codex not found on PATH. Install Codex, then restart fleeting:\\n  npm install -g @openai/codex\\n"
+	case "cursor":
+		return "Cursor agent CLI not found on PATH (tried agent, cursor-agent, cursor).\\n"
+	case "pi":
+		return "pi not found on PATH.\\n"
+	default:
+		return "omp not found on PATH. Install Oh My Pi, then restart fleeting up:\\n  curl -fsSL https://omp.sh/install | sh\\n"
+	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// IDFromBin maps a spawned argv0 basename to a catalog id.
+func IDFromBin(base string) string {
+	switch strings.ToLower(filepath.Base(base)) {
+	case "claude":
+		return "claude"
+	case "codex":
+		return "codex"
+	case "agent", "cursor-agent", "cursor":
+		return "cursor"
+	case "omp":
+		return "omp"
+	case "pi":
+		return "pi"
+	default:
+		return ""
+	}
+}
+
+func sessionRoot(fleetingHome, name string) string {
+	return filepath.Join(fleetingHome, "sessions", name)
+}
+
+func ClaudeConfigDir(fleetingHome, name string) string {
+	return filepath.Join(sessionRoot(fleetingHome, name), "claude")
+}
+
+func CodexHome(fleetingHome, name string) string {
+	return filepath.Join(sessionRoot(fleetingHome, name), "codex")
+}
+
+// PrepareSession creates per-persona dirs and returns extra env for the child.
+// Claude uses CLAUDE_CONFIG_DIR; Codex uses CODEX_HOME.
+func PrepareSession(fleetingHome, id, name string) []string {
+	id = strings.ToLower(strings.TrimSpace(id))
+	_ = os.MkdirAll(sessionRoot(fleetingHome, name), 0o755)
+	switch id {
+	case "claude":
+		dir := ClaudeConfigDir(fleetingHome, name)
+		_ = os.MkdirAll(dir, 0o755)
+		return []string{"CLAUDE_CONFIG_DIR=" + dir}
+	case "codex":
+		dir := CodexHome(fleetingHome, name)
+		_ = os.MkdirAll(dir, 0o755)
+		return []string{"CODEX_HOME=" + dir}
+	default:
+		return nil
+	}
+}
+
+// LockDirs are scanned for stale .lock/.pid/.sock files when a cell reaps.
+func LockDirs(fleetingHome, name string) []string {
+	dirs := []string{
+		sessionRoot(fleetingHome, name),
+		ClaudeConfigDir(fleetingHome, name),
+		CodexHome(fleetingHome, name),
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".omp", "profiles", name))
+	}
+	return dirs
 }
 
 func canExec(p string) bool {

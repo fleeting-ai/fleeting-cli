@@ -8,12 +8,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/harness"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
-	"github.com/richard-ginsberg/fleeting/internal/pi"
-	"github.com/richard-ginsberg/fleeting/internal/spool"
-	"github.com/richard-ginsberg/fleeting/internal/workspace"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/pi"
+	"github.com/fleeting-ai/fleeting-cli/internal/spool"
+	"github.com/fleeting-ai/fleeting-cli/internal/workspace"
 )
 
 type Model struct {
@@ -34,6 +35,12 @@ type Model struct {
 	byName    map[string]listen.Snapshot
 	msgTo     string
 	msgBody   string
+	msgAction string
+	msgIdx    int
+	mail      []bus.Record
+	storeDown bool
+	busTok    string
+	storeTok  string
 	mode      string
 	gotoBuf   string
 	status    string
@@ -65,6 +72,7 @@ func New(srv listen.Host, cfg *config.File, home string) Model {
 		extras: map[int]workspace.Cell{},
 	}
 	m.restoreWorkspace()
+	m.upgradePlaceholders()
 	return m
 }
 
@@ -85,39 +93,88 @@ func (m *Model) restoreWorkspace() {
 	if len(m.cfg.Fleets) > 0 && m.hubIdx >= len(m.cfg.Fleets) {
 		m.hubIdx = 0
 	}
+	live := map[string]bool{}
+	if m.srv != nil {
+		for _, s := range m.srv.Snapshots() {
+			if s.Name != "" && s.Alive {
+				live[s.Name] = true
+			}
+		}
+	}
 	for _, c := range ws.Cells {
 		if c.Name == "" {
+			continue
+		}
+		// Map the slot first. If Spawn fails because the daemon still owns
+		// this PTY, the cell must still bind or C1 looks empty on -r.
+		m.extras[c.Global] = c
+		if m.fleetHas(c.Name) || live[c.Name] {
+			continue
+		}
+		if len(c.Cmd) == 0 {
 			continue
 		}
 		fleet := c.Fleet
 		if fleet == "" && len(m.cfg.Fleets) > 0 {
 			fleet = m.cfg.Fleets[m.hubIdx].ID
 		}
-		if !m.fleetHas(c.Name) {
-			if len(c.Cmd) == 0 {
-				continue
-			}
-			a := config.Agent{
-				Name:       c.Name,
-				Role:       c.Role,
-				Lane:       c.Lane,
-				Harness:    c.Harness,
-				Cmd:        c.Cmd,
-				ResumeGUID: c.GUID,
-			}
-			if a.Role == "" {
-				a.Role = "worker"
-			}
-			if a.Lane == "" {
-				a.Lane = c.Harness
-			}
-			if err := m.srv.Spawn(fleet, a); err != nil {
-				continue
-			}
+		a := config.Agent{
+			Name:       c.Name,
+			Role:       c.Role,
+			Lane:       c.Lane,
+			Harness:    c.Harness,
+			Cmd:        c.Cmd,
+			ResumeGUID: c.GUID,
 		}
-		m.extras[c.Global] = c
+		if a.Role == "" {
+			a.Role = "worker"
+		}
+		if a.Lane == "" {
+			a.Lane = c.Harness
+		}
+		_ = m.srv.Spawn(fleet, a)
 	}
 	m.savedFP = workspace.Fingerprint(m.workspaceFile())
+}
+
+func (m *Model) upgradePlaceholders() {
+	if m.srv == nil {
+		return
+	}
+	for _, s := range m.srv.Snapshots() {
+		if !s.Alive || !harness.Placeholder(s.Cmd, s.Screen) {
+			continue
+		}
+		a := config.Agent{
+			Name:    s.Name,
+			Role:    s.Role,
+			Lane:    s.Lane,
+			Harness: s.Harness,
+			Cmd:     s.Cmd,
+			Hub:     s.Hub,
+			Peers:   s.Peers,
+		}
+		if fa := m.agentByName(s.Name); fa != nil {
+			a.Role = fa.Role
+			a.Lane = fa.Lane
+			a.Harness = fa.Harness
+			a.Hub = fa.Hub
+			a.Peers = fa.Peers
+		}
+		if a.Harness == "" {
+			a.Harness = "omp"
+		}
+		in, err := harness.Resolve(a.Harness)
+		if err != nil {
+			continue
+		}
+		a.Cmd = in.CmdForAgent(a.Name)
+		fleet := s.Fleet
+		if fleet == "" && len(m.cfg.Fleets) > 0 {
+			fleet = m.cfg.Fleets[m.hubIdx].ID
+		}
+		_ = m.srv.Replace(fleet, a)
+	}
 }
 
 type kickMsg struct{}
@@ -167,6 +224,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, s := range m.snaps {
 			m.byName[s.Name] = s
 		}
+		if m.srv != nil {
+			st := m.srv.Status()
+			m.busTok = st.Bus
+			m.storeTok = st.Store
+			p, err := m.srv.Coord(listen.Packet{Kind: "log", Limit: 4})
+			if err != nil {
+				m.storeDown = true
+			} else {
+				m.storeDown = false
+				m.mail = p.Mail
+			}
+		}
 		return m, tea.Tick(time.Millisecond*120, func(t time.Time) tea.Msg { return tickMsg(t) })
 	case tea.KeyMsg:
 		return m.key(msg)
@@ -211,17 +280,57 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.mode == "msg" {
+		s := msg.String()
+		if s == "ctrl+c" {
+			if name := m.focusedName(); name != "" && m.srv != nil {
+				if b := encodeKey(msg); len(b) > 0 {
+					_ = m.srv.Write(name, b)
+				}
+			}
+			return m, nil
+		}
+		if s == "ctrl+a" {
+			m.prefix = true
+			m.status = "C-a  d=detach"
+			m.mode = ""
+			return m, nil
+		}
+		if s == "tab" {
+			m = m.cycleMsgTarget(1)
+			return m, nil
+		}
+		if s == "shift+tab" {
+			m = m.cycleMsgTarget(-1)
+			return m, nil
+		}
+		if s == "alt+a" {
+			switch m.msgAction {
+			case "", "fyi":
+				m.msgAction = "todo"
+			case "todo":
+				m.msgAction = "order"
+			default:
+				m.msgAction = "fyi"
+			}
+			return m, nil
+		}
 		switch msg.Type {
 		case tea.KeyEsc:
 			m.mode = ""
 			m.msgBody = ""
 		case tea.KeyEnter:
 			from := m.focusedName()
-			err := m.srv.RoutePublic(from, m.msgTo, m.msgBody)
+			send := bus.Send{From: from, Action: m.msgAction, Body: m.msgBody}
+			if strings.HasPrefix(m.msgTo, "@") {
+				send.Team = strings.TrimPrefix(m.msgTo, "@")
+			} else {
+				send.To = m.msgTo
+			}
+			err := m.srv.RouteMail(send)
 			if err != nil {
 				m.lastErr = err.Error()
 			} else {
-				m.status = fmt.Sprintf("%s → %s", from, m.msgTo)
+				m.status = fmt.Sprintf("%s %s → %s", send.Action, from, m.msgTo)
 				m.lastErr = ""
 			}
 			m.mode = ""
@@ -357,12 +466,7 @@ func (m Model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.applyPTYs(m.paneSize())
 		m.colOff = clamp(m.colOff, 0, m.maxOff())
 	case "ctrl+m":
-		m.mode = "msg"
-		m.msgTo = ""
-		if se := m.focused(); se != nil && len(se.Peers) > 0 {
-			m.msgTo = se.Peers[0]
-		}
-		m.msgBody = ""
+		return m.openMsg()
 	case "alt+left":
 		m.colOff = clamp(m.colOff-1, 0, m.maxOff())
 	case "alt+right":
@@ -619,12 +723,23 @@ func (m Model) renderOperator(w, h int) string {
 	}
 	b.WriteString(fmt.Sprintf("working %d  stopped %d  attention %d  tokens %d  agents %d\n",
 		counts["working"], counts["stopped"], counts["attention"], counts["tokens"], len(m.snaps)))
-	if len(ev) == 0 {
-		b.WriteString("no declarations or messages yet — hiro waits on file+md5+intent; risa lands git")
-	} else {
-		for _, e := range ev {
-			b.WriteString(fmt.Sprintf("%s %s→%s %s\n", e.Kind, e.From, e.To, trunc(e.Body, 60)))
+	if m.storeDown {
+		b.WriteString("store down\n")
+	}
+	shown := 0
+	for _, rec := range m.mail {
+		b.WriteString(trunc(rec.Frame(), 72) + "\n")
+		shown++
+	}
+	for _, e := range ev {
+		if e.Kind != "declare" {
+			continue
 		}
+		b.WriteString(fmt.Sprintf("declare %s %s\n", e.From, trunc(e.Body, 40)))
+		shown++
+	}
+	if shown == 0 && !m.storeDown {
+		b.WriteString("no declarations or messages yet — hiro waits on file+md5+intent; risa lands git")
 	}
 	return style.Render(strings.TrimRight(b.String(), "\n"))
 }
@@ -819,7 +934,7 @@ func (m Model) renderBar(w int) string {
 	pageBit := ansiBG(pageANSI(lo)) + ansiFG(16) + " " + label + " " + ansiReset
 	rest := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
 	focus := m.focusedName()
-	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  ?/F1 help  C-a d detach  F3/F4  F5 %s-model  alt←/→  ctrl+g  ctrl+o  ctrl+s  ctrl+q", m.grid, m.grid, focus, m.zoomSpan, m.modelKind())
+	line := fmt.Sprintf(" %dx%d  focus=%s  zoom=%d  ?/F1 help  C-a d detach  bus %s  store %s  F3/F4  F5 %s-model  alt←/→  ctrl+g  ctrl+o  ctrl+s  ctrl+q", m.grid, m.grid, focus, m.zoomSpan, nzTok(m.busTok), nzTok(m.storeTok), m.modelKind())
 	if m.lastErr != "" {
 		line += "  ERR " + m.lastErr
 	} else if m.status != "" {
@@ -848,7 +963,11 @@ func (m Model) renderBar(w int) string {
 		line = " workspace changed — s save and quit  n quit without saving  esc cancel"
 	}
 	if m.mode == "msg" {
-		line = fmt.Sprintf(" msg %s → %s: %s", m.focusedName(), m.msgTo, m.msgBody)
+		act := m.msgAction
+		if act == "" {
+			act = "fyi"
+		}
+		line = fmt.Sprintf(" msg %s %s → %s: %s", act, m.focusedName(), m.msgTo, m.msgBody)
 	}
 	if m.prefix {
 		line = " C-a prefix  d detach  C-a C-a sends ^A to the PTY  (Ctrl+C still goes to the agent)"
@@ -865,4 +984,51 @@ func trunc(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+func nzTok(s string) string {
+	if s == "" {
+		return "down"
+	}
+	return s
+}
+
+func (m Model) msgTargets() []string {
+	var out []string
+	if se := m.focused(); se != nil {
+		out = append(out, se.Peers...)
+	}
+	name := m.focusedName()
+	if m.cfg != nil && name != "" {
+		for _, id := range m.cfg.TeamsOf(name) {
+			out = append(out, "@"+id)
+		}
+	}
+	return out
+}
+
+func (m Model) openMsg() (tea.Model, tea.Cmd) {
+	m.mode = "msg"
+	m.msgAction = "fyi"
+	m.msgBody = ""
+	tg := m.msgTargets()
+	m.msgIdx = 0
+	m.msgTo = ""
+	if len(tg) > 0 {
+		m.msgTo = tg[0]
+	}
+	return m, nil
+}
+
+func (m Model) cycleMsgTarget(dir int) Model {
+	tg := m.msgTargets()
+	if len(tg) == 0 {
+		return m
+	}
+	m.msgIdx = (m.msgIdx + dir) % len(tg)
+	if m.msgIdx < 0 {
+		m.msgIdx = len(tg) - 1
+	}
+	m.msgTo = tg[m.msgIdx]
+	return m
 }

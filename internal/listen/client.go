@@ -7,7 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/richard-ginsberg/fleeting/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
 )
 
 // Client talks to a running daemon over the Unix socket.
@@ -143,6 +144,12 @@ func (c *Client) Spawn(fleetID string, a config.Agent) error {
 	return err
 }
 
+func (c *Client) Replace(fleetID string, a config.Agent) error {
+	ag := a
+	_, err := c.rpc(Packet{Op: "replace", Fleet: fleetID, Agent: &ag})
+	return err
+}
+
 func (c *Client) Restart(name string) error {
 	_, err := c.rpc(Packet{Op: "restart", Name: name})
 	return err
@@ -156,9 +163,22 @@ func (c *Client) ResizeSession(name string, cols, rows int) {
 	_, _ = c.rpc(Packet{Op: "resize", Name: name, Cols: cols, Rows: rows})
 }
 
-func (c *Client) RoutePublic(from, to, body string) error {
-	_, err := c.rpc(Packet{Op: "msg", From: from, To: to, Body: body})
+func (c *Client) RouteMail(s bus.Send) error {
+	_, err := c.rpc(Packet{Op: "msg", From: s.From, To: s.To, Body: s.Body, Action: s.Action, Team: s.Team, Thread: s.Thread, ReplyTo: s.ReplyTo})
 	return err
+}
+
+func (c *Client) Coord(p Packet) (Packet, error) {
+	p.Op = "coord"
+	return c.rpc(p)
+}
+
+func (c *Client) Status() Status {
+	st, err := c.QueryStatus()
+	if err != nil {
+		return Status{}
+	}
+	return st
 }
 
 func (c *Client) Down() error {

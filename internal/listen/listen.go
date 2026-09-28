@@ -16,9 +16,10 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/presence"
-	"github.com/richard-ginsberg/fleeting/internal/spool"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/presence"
 )
 
 // Server is the local Fleeting listener. Remote hosts will speak the same
@@ -36,6 +37,10 @@ type Server struct {
 	replayMu sync.Mutex
 	replay   []ReplayFrame
 	stop     chan struct{}
+	store    bus.Store
+	broker   *bus.Broker
+	busErr   error
+	storeErr error
 }
 
 type jsonConn struct {
@@ -108,6 +113,8 @@ func (s *Server) Start(ctx context.Context) error {
 	s.ln = ln
 	_ = os.WriteFile(config.PidPath(), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644)
 
+	s.startBus(ctx)
+
 	for _, fl := range s.cfg.Fleets {
 		for _, a := range fl.Agents {
 			if err := s.spawn(fl.ID, a); err != nil {
@@ -145,29 +152,30 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	if guid == "" {
 		guid = fmt.Sprintf("%s-%d", a.Name, time.Now().UnixNano())
 	}
-	if a.Harness == "" {
-		base := ""
-		if len(a.Cmd) > 0 {
-			base = filepath.Base(a.Cmd[0])
-		}
-		switch base {
-		case "omp":
-			a.Harness = "omp"
-		case "pi":
-			a.Harness = "pi"
-		}
+	if a.Rank == 0 {
+		a.Rank = config.RankOf(a.Role, a.Rank)
+	}
+	if a.Harness == "" && len(a.Cmd) > 0 {
+		a.Harness = harness.IDFromBin(a.Cmd[0])
+	}
+	if len(a.Cmd) == 0 || harness.LooksLikeMissingCmd(a.Cmd) {
+		a.Cmd = config.DefaultCmd(&a)
 	}
 	cmd := exec.Command(a.Cmd[0], a.Cmd[1:]...)
-	cmd.Env = append(os.Environ(),
-		"FLEETING_NAME="+a.Name,
-		"FLEETING_LANE="+a.Lane,
-		"FLEETING_ROLE="+a.Role,
-		"FLEETING_FLEET="+fleetID,
-		"FLEETING_GUID="+guid,
-		"OMP_PROFILE="+a.Name,
+	env := []string{
+		"FLEETING_NAME=" + a.Name,
+		"FLEETING_AGENT=" + a.Name,
+		"FLEETING_LANE=" + a.Lane,
+		"FLEETING_ROLE=" + a.Role,
+		"FLEETING_FLEET=" + fleetID,
+		"FLEETING_GUID=" + guid,
+		"OMP_PROFILE=" + a.Name,
 		"TERM=xterm-256color",
 		"COLORTERM=truecolor",
-	)
+	}
+	env = append(env, harness.PrepareSession(config.Dir(), a.Harness, a.Name)...)
+	env = append(env, "PATH="+harness.PATHEnv())
+	cmd.Env = append(os.Environ(), env...)
 	_ = os.MkdirAll(filepath.Join(config.Dir(), "sessions", a.Name), 0o755)
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
@@ -193,6 +201,7 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	s.mu.Unlock()
 	go se.readLoop()
 	go se.waitLoop(s)
+	s.onSpawnBus(a)
 	return nil
 }
 
@@ -217,6 +226,40 @@ func (s *Server) Spawn(fleetID string, a config.Agent) error {
 	return s.spawn(fleetID, a)
 }
 
+// Replace kills a live session of the same name (placeholder or otherwise) and starts a.
+func (s *Server) Replace(fleetID string, a config.Agent) error {
+	if a.Name == "" {
+		return fmt.Errorf("replace needs name")
+	}
+	s.mu.Lock()
+	se := s.sess[a.Name]
+	if se != nil {
+		if se.Cmd != nil && se.Cmd.Process != nil {
+			_ = se.Cmd.Process.Kill()
+		}
+		s.mu.Unlock()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			s.mu.Lock()
+			_, ok := s.sess[a.Name]
+			s.mu.Unlock()
+			if !ok {
+				return s.spawn(fleetID, a)
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+		s.mu.Lock()
+		se = s.sess[a.Name]
+		delete(s.sess, a.Name)
+		s.mu.Unlock()
+		dropSession(se)
+		clearStaleLocks(a.Name)
+		return s.spawn(fleetID, a)
+	}
+	s.mu.Unlock()
+	return s.spawn(fleetID, a)
+}
+
 // Restart kills a live session and starts the same agent again (Pi model reload).
 func (s *Server) Restart(name string) error {
 	s.mu.Lock()
@@ -227,21 +270,8 @@ func (s *Server) Restart(name string) error {
 	}
 	a := se.Agent
 	fleet := se.FleetID
-	if se.Cmd != nil && se.Cmd.Process != nil {
-		_ = se.Cmd.Process.Kill()
-	}
 	s.mu.Unlock()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		s.mu.Lock()
-		_, ok := s.sess[name]
-		s.mu.Unlock()
-		if !ok {
-			return s.Spawn(fleet, a)
-		}
-		time.Sleep(30 * time.Millisecond)
-	}
-	return fmt.Errorf("timeout restarting %s", name)
+	return s.Replace(fleet, a)
 }
 
 func (se *Session) readLoop() {
@@ -345,10 +375,7 @@ func clearStaleLocks(name string) {
 	if name == "" {
 		return
 	}
-	dirs := []string{filepath.Join(config.Dir(), "sessions", name)}
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, ".omp", "profiles", name))
-	}
+	dirs := harness.LockDirs(config.Dir(), name)
 	for _, dir := range dirs {
 		ents, err := os.ReadDir(dir)
 		if err != nil {
@@ -380,6 +407,7 @@ func (s *Server) Reap(name string) {
 	s.mu.Unlock()
 	dropSession(se)
 	clearStaleLocks(name)
+	s.onReapBus(name)
 }
 
 func (s *Server) harvestDead() {
@@ -397,6 +425,13 @@ func (s *Server) harvestDead() {
 }
 
 func (s *Server) KillAll() {
+	if s.broker != nil {
+		s.broker.Close()
+	}
+	if s.store != nil {
+		_ = s.store.Close()
+		s.store = nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, se := range s.sess {
@@ -500,14 +535,28 @@ func (s *Server) dispatch(jc *jsonConn, w Packet) bool {
 		err := s.Write(w.Name, []byte(w.Data))
 		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
 	case "msg":
-		err := s.RoutePublic(w.From, w.To, w.Body)
+		err := s.RouteMail(bus.Send{From: w.From, To: w.To, Body: w.Body, Action: w.Action, Team: w.Team, Thread: w.Thread, ReplyTo: w.ReplyTo})
 		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
+	case "coord":
+		p, err := s.Coord(w)
+		if err != nil {
+			_ = jc.send(Packet{OK: false, Op: "coord", Kind: w.Kind, Err: err.Error()})
+			break
+		}
+		_ = jc.send(p)
 	case "spawn":
 		if w.Agent == nil {
 			_ = jc.send(Packet{OK: false, Err: "spawn needs agent"})
 			break
 		}
 		err := s.Spawn(w.Fleet, *w.Agent)
+		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
+	case "replace":
+		if w.Agent == nil {
+			_ = jc.send(Packet{OK: false, Err: "replace needs agent"})
+			break
+		}
+		err := s.Replace(w.Fleet, *w.Agent)
 		_ = jc.send(Packet{OK: err == nil, Err: errstr(err)})
 	case "restart":
 		err := s.Restart(w.Name)
@@ -593,12 +642,17 @@ func (s *Server) Status() Status {
 	for _, sn := range snaps {
 		names = append(names, sn.Name)
 	}
+	busLine, storeLine, busURL, storeURL := s.busStatus()
 	return Status{
 		PID:      os.Getpid(),
 		Socket:   s.path,
 		Attached: s.Attached(),
 		Agents:   len(snaps),
 		Names:    names,
+		Bus:      busLine,
+		Store:    storeLine,
+		BusURL:   busURL,
+		StoreURL: storeURL,
 	}
 }
 
@@ -619,35 +673,4 @@ func errstr(err error) string {
 		return ""
 	}
 	return err.Error()
-}
-
-func (s *Server) RoutePublic(from, to, body string) error {
-	s.mu.Lock()
-	src := s.sess[from]
-	dst := s.sess[to]
-	s.mu.Unlock()
-	if src == nil || dst == nil {
-		return fmt.Errorf("unknown endpoint")
-	}
-	allowed := false
-	for _, p := range src.Agent.Peers {
-		if p == to {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
-		return fmt.Errorf("denied: %s cannot speak to %s (default deny)", from, to)
-	}
-	line := fmt.Sprintf("\r\n[fleeting %s→%s] %s\r\n", from, to, body)
-	if err := s.Write(to, []byte(line)); err != nil {
-		return err
-	}
-	return spool.Append(s.home, spool.Event{
-		Kind: "msg",
-		From: from,
-		To:   to,
-		Body: body,
-		At:   time.Now(),
-	})
 }

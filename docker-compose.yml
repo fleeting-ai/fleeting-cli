@@ -1,0 +1,43 @@
+# Local bus infra. SQLite is the default store — only RabbitMQ is required
+# for in-flight mail. Postgres is an optional profile.
+#
+#   docker compose up -d
+#   docker compose --profile postgres up -d
+
+services:
+  rabbitmq:
+    build:
+      context: ./docker/rabbitmq
+    image: fleeting-rabbitmq
+    container_name: fleeting-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    profiles: ["postgres"]
+    build:
+      context: ./docker/postgres
+    image: fleeting-postgres
+    container_name: fleeting-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: fleeting
+      POSTGRES_PASSWORD: fleeting
+      POSTGRES_DB: fleeting
+    volumes:
+      - fleeting-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleeting -d fleeting"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fleeting-pg:

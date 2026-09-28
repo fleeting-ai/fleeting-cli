@@ -2,13 +2,13 @@ package tui
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
-	"github.com/richard-ginsberg/fleeting/internal/workspace"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/harness"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/workspace"
 )
 
 func (m Model) workspaceFile() workspace.File {
@@ -48,6 +48,9 @@ func (m Model) captureLiveCells() Model {
 		}
 		snap, ok := m.byName[name]
 		if !ok {
+			continue
+		}
+		if harness.Placeholder(snap.Cmd, snap.Screen) {
 			continue
 		}
 		cur := m.extras[g]
@@ -95,12 +98,7 @@ func fillCell(c workspace.Cell, snap listen.Snapshot, a *config.Agent) workspace
 		}
 	}
 	if c.Harness == "" && len(c.Cmd) > 0 {
-		switch strings.ToLower(filepath.Base(c.Cmd[0])) {
-		case "omp":
-			c.Harness = "omp"
-		case "pi":
-			c.Harness = "pi"
-		}
+		c.Harness = harness.IDFromBin(c.Cmd[0])
 	}
 	return c
 }

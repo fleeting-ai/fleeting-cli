@@ -12,11 +12,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/richard-ginsberg/fleeting/internal/cli"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
-	"github.com/richard-ginsberg/fleeting/internal/spool"
-	"github.com/richard-ginsberg/fleeting/internal/tui"
+	"github.com/fleeting-ai/fleeting-cli/internal/cli"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/spool"
+	"github.com/fleeting-ai/fleeting-cli/internal/tui"
 )
 
 func main() {
@@ -37,6 +37,20 @@ func main() {
 		if err := declare(act.Declare); err != nil {
 			fatal(err)
 		}
+	case "send":
+		runSend(act.Args)
+	case "listen":
+		runListen(act.Args)
+	case "log":
+		runLog(act.Args)
+	case "card":
+		runCard(act.Args)
+	case "rules":
+		runRules(act.Args)
+	case "memory":
+		runMemory(act.Args)
+	case "bus":
+		runBus(act.Args)
 	case "daemon":
 		if err := runDaemon(); err != nil {
 			fatal(err)
@@ -76,6 +90,13 @@ func usage() {
   fleeting down            stop the daemon and all agent PTYs
   fleeting onboard         write ~/.fleeting/fleet.yaml
   fleeting declare --agent NAME --intent TEXT FILE [FILE...]
+  fleeting send --from NAME (--to NAME|--team ID) [--action fyi|todo|order|ack] -- BODY
+  fleeting listen --as NAME [--once]
+  fleeting log --as NAME [--team ID] [--all] [--last N]
+  fleeting card --as NAME
+  fleeting rules | fleeting rules set --from NAME -- BODY | fleeting rules log
+  fleeting memory list|get|set|log ...
+  fleeting bus
 
 Detach key (inside the TUI): Ctrl-A then d
   Ctrl-A Ctrl-A sends a literal Ctrl-A to the focused PTY.
@@ -174,7 +195,7 @@ func listSessions() error {
 	if st.Attached {
 		att = "attached"
 	}
-	fmt.Printf("fleeting  pid=%d  %s  %s  %d agents\n", st.PID, att, st.Socket, st.Agents)
+	fmt.Printf("fleeting  pid=%d  %s  %s  %d agents  bus %s  store %s\n", st.PID, att, st.Socket, st.Agents, nz(st.Bus, "down"), nz(st.Store, "down"))
 	for _, n := range st.Names {
 		fmt.Printf("  %s\n", n)
 	}

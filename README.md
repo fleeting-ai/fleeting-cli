@@ -4,7 +4,7 @@ One CLI pane of glass for many Oh My Pi (and later other) agent TUIs. Live PTY c
 
 The **daemon** owns every agent PTY and stays connected to model providers on a stable Linux box. Your SSH/PuTTY/WSL client is just an attachable TUI: close the laptop, lose the tether, or detach on purpose — agents keep running. Reattach later like GNU screen.
 
-Each occupied cell runs `omp --profile <4-letter-name>` so that persona has its own OMP state (`~/.omp/profiles/<name>/`). `--alias` is a shell-shortcut installer and must not be used here. Empty cells stay empty until you launch a CLI into them. Resize the outer window and each inner PTY is SIGWINCH’d to match.
+Each occupied cell runs the harness for that persona. Oh My Pi is `omp --profile <4-letter-name>` so state lives in `~/.omp/profiles/<name>/` (`--alias` is a shell-shortcut installer and must not be used here). Claude Code is `claude` with `CLAUDE_CONFIG_DIR=~/.fleeting/sessions/<name>/claude`. Codex is `codex` with `CODEX_HOME=~/.fleeting/sessions/<name>/codex`. Empty cells stay empty until you launch a CLI into them. Resize the outer window and each inner PTY is SIGWINCH’d to match.
 
 ## Run as a daemon (Linux)
 
@@ -12,9 +12,12 @@ On the machine that should keep agents alive (not your laptop session):
 
 ```bash
 # once
-go install github.com/richard-ginsberg/fleeting/cmd/fleeting@latest
+go install github.com/fleeting-ai/fleeting-cli/cmd/fleeting@latest
 # or from this repo:
 go build -o fleeting ./cmd/fleeting
+
+# bus infra (RabbitMQ). SQLite is the default store — no database container needed.
+docker compose up -d
 
 fleeting onboard          # writes ~/.fleeting/fleet.yaml
 fleeting daemon           # foreground: systemd, tmux, or `nohup fleeting daemon &`
@@ -73,9 +76,24 @@ Focus an empty cell, then **Ctrl+O**. The status bar lists harnesses that are on
 | Oh My Pi | `omp` (`--profile <persona>`, never `--alias`) |
 | Pi | `pi` only — not Oh My Pi |
 
-Type `1`–`9` (or Enter if only one is installed). Esc cancels. Occupied cells refuse the menu. Ad-hoc launches pick the next unused 4-letter name from hcom’s gold list (`luna`, `nova`, …). When the process exits, the cell goes blank.
+Type `1`–`9` (or Enter if only one is installed). Esc cancels. Occupied cells refuse the menu. **Only binaries that `command -v` finds are listed.** If you see Cursor / Oh My Pi / Pi but not Claude or Codex, `claude` and `codex` are not on PATH in that shell — install them, open a new SSH session, then Ctrl+O again. You do not need a daemon restart for the menu to pick up PATH.
 
-**Ctrl+S** writes `~/.fleeting/workspace.yaml` (grid, zoom, focus, paging, and extra cells). **Ctrl+Q** detaches immediately if nothing changed; otherwise the status bar asks **s** save and quit, **n** quit without saving, **esc** cancel. `fleeting up` restores that workspace on top of `fleet.yaml`.
+Ad-hoc launches pick the next unused 4-letter name from hcom’s gold list (`luna`, `nova`, …). When the process exits, the cell goes blank.
+
+**Ctrl+S** writes `~/.fleeting/workspace.yaml` (grid, zoom, focus, paging, and extra cells). **Ctrl+Q** detaches immediately if nothing changed; otherwise the status bar asks **s** save and quit, **n** quit without saving, **esc** cancel. `fleeting -r` / `up` restores that workspace on top of `fleet.yaml`. Extra cells (e.g. Cursor on C1) stay bound to the live PTY.
+
+## Restart the daemon after pulling code
+
+`fleeting` / `go run ./cmd/fleeting` **attaches to a daemon that is already running**. Switching branches or `git pull` only updates the TUI process. The PTYs keep using the old daemon binary until you bounce it:
+
+```bash
+go run ./cmd/fleeting down
+go run ./cmd/fleeting        # or: fleeting daemon, then attach
+```
+
+`go run` is especially easy to get wrong: the first run may have spawned `…/go-build/…/fleeting daemon` from an old checkout. `-r` will happily reattach to that. Always `down` after pulling harness changes.
+
+The daemon often does **not** load `.bashrc`, so `~/.local/bin` (where `omp` usually lives) can be missing from PATH even though `which omp` works in your shell. Fleeting now searches `~/.local/bin` (and a few other user bins) when resolving harnesses and prepends them to each agent PATH. Fleet cells that already show `omp not found` are a live placeholder PTY — they look occupied. On attach, if `omp` is found, those placeholders are replaced with real Oh My Pi. Ctrl+O on a placeholder cell is allowed (it replaces the placeholder).
 
 ## Oh My Pi (required for cells)
 
@@ -115,15 +133,75 @@ Each agent’s OMP profile is `~/.omp/profiles/<name>/`. If `omp` is missing, th
 | Alt+] / F2 | Next hub |
 | F3 | Shrink grid; at 3×3 zoom focus to 2×2 then 3×3 |
 | F4 | Unzoom, then grow grid |
-| Ctrl+M | Message along an allowed peer edge |
+| Ctrl+M | Bus message to a peer or `@team` (Tab cycles target, Alt+A cycles fyi/todo/order) |
 | Ctrl+C | Interrupt in the focused OMP (does not quit Fleeting) |
 | 2 / 4 / 8 / g | Replay speed 2× / 4× / 8× / 16× (while catching up) |
 | L | Jump replay to live |
 
 ## Config
 
-`~/.fleeting/fleet.yaml` — omit `cmd:` to launch OMP. Override `cmd:` only for a different harness. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`. Pi models: `~/.pi/agent/models.json`. OMP models: `~/.omp/profiles/<persona>/agent/models.yml`.
+`~/.fleeting/fleet.yaml` — omit `cmd:` to launch the `harness:` binary (`omp --profile <name>`, `claude`, `codex`, Cursor `agent`/`cursor-agent`/`cursor`, or `pi`). Override `cmd:` when you need extra flags. Listener: `~/.fleeting/fleeting.sock`. Saved layout: `~/.fleeting/workspace.yaml`. Pi models: `~/.pi/agent/models.json`. OMP models: `~/.omp/profiles/<persona>/agent/models.yml`. Claude/Codex persona dirs: `~/.fleeting/sessions/<name>/{claude,codex}`.
 
 ## Local Pi / OMP models (F5)
 
 Focus a **Pi** or **Oh My Pi** cell — the status bar says `F5 pi-model` or `F5 omp-model`. Press **F5**. If that harness already has models, choose **1 add** or **2 edit**. Then llama.cpp / vLLM / SGLang, host, port. On **model id**, **Tab** GETs `{host}:{port}/v1/models`. Pi writes `~/.pi/agent/models.json`. OMP with `--profile kite` reads **`~/.omp/profiles/kite/agent/models.yml`**, not `~/.omp/agent/models.yml`. YAML is 2-space and omits keys OMP’s schema rejects (`samplingParams`, `thinkingTokenBudgetField`). Existing SaaS providers stay. The focused cell reloads. Use `/model` in the agent to select it.
+
+## Message bus
+
+RabbitMQ holds mail in flight. SQLite (default `~/.fleeting/bus.db`) records consumed chat plus onboarding, rules, and shared memories. Postgres is optional. Agents never dial the broker or the database; they call the CLI with `FLEETING_AGENT`.
+
+### Infra (Docker)
+
+RabbitMQ is the only extra process for the bus. From this repo:
+
+```bash
+docker compose up -d                 # RabbitMQ on :5672, management UI on :15672
+# guest / guest  — same default as examples/fleet.yaml
+```
+
+Or build the image yourself:
+
+```bash
+docker build -t fleeting-rabbitmq docker/rabbitmq
+docker run -d --name fleeting-rabbitmq -p 5672:5672 -p 15672:15672 fleeting-rabbitmq
+```
+
+URL, first hit wins: `FLEETING_AMQP`, then `bus.url` in `fleet.yaml`, then `amqp://guest:guest@127.0.0.1:5672/`. After the container is up:
+
+```bash
+fleeting down    # if a daemon is already running
+fleeting daemon  # or: fleeting
+fleeting bus     # broker should read "up"
+```
+
+The store stays SQLite unless you opt in. Do not start Postgres for a normal install.
+
+Optional Postgres (drop-in for the same store; never a silent fallback):
+
+```bash
+docker compose --profile postgres up -d
+# or:
+docker build -t fleeting-postgres docker/postgres
+docker run -d --name fleeting-postgres -p 5432:5432 fleeting-postgres
+```
+
+Then point the daemon at it (`postgres://fleeting:fleeting@127.0.0.1:5432/fleeting` is the container default — change the password outside a lab):
+
+```bash
+export FLEETING_DB='postgres://fleeting:fleeting@127.0.0.1:5432/fleeting'
+# or set bus.db: in ~/.fleeting/fleet.yaml
+fleeting down
+fleeting
+```
+
+```bash
+fleeting send --from risa --to nova --action todo -- fix the border
+fleeting listen --as nova --once
+fleeting card --as nova
+fleeting bus
+```
+
+Direct sends default-deny on `peers:`. Team sends go to `fleeting.team.<id>` then fan out to each other member's `fleeting.agent.<name>` queue. `fyi` never obligates a reply. `todo` does, and a strictly higher `rank` stamps `order: true`. `Ctrl+M` publishes on this bus and does not write the target PTY.
+
+Broker down: the grid still attaches and agents keep running. `send` returns a clear error. There is no silent PTY fallback. Store down: RabbitMQ is not acked, so mail stays in flight. A configured Postgres is never silently replaced with SQLite.
+

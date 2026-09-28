@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
 )
 
 func TestCtrlADDetachesWithoutCtrlC(t *testing.T) {

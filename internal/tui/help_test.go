@@ -6,8 +6,9 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/richard-ginsberg/fleeting/internal/config"
-	"github.com/richard-ginsberg/fleeting/internal/listen"
+	"github.com/fleeting-ai/fleeting-cli/internal/bus"
+	"github.com/fleeting-ai/fleeting-cli/internal/config"
+	"github.com/fleeting-ai/fleeting-cli/internal/listen"
 )
 
 type helpHost struct {
@@ -20,12 +21,17 @@ func (h *helpHost) Write(_ string, data []byte) error {
 	return nil
 }
 func (h *helpHost) Spawn(string, config.Agent) error { return nil }
-func (h *helpHost) Restart(string) error             { return nil }
-func (h *helpHost) Resize(int, int)                  {}
-func (h *helpHost) ResizeSession(string, int, int)   {}
-func (h *helpHost) RoutePublic(string, string, string) error {
+func (h *helpHost) Replace(string, config.Agent) error {
 	return nil
 }
+func (h *helpHost) Restart(string) error           { return nil }
+func (h *helpHost) Resize(int, int)                {}
+func (h *helpHost) ResizeSession(string, int, int) {}
+func (h *helpHost) RouteMail(bus.Send) error       { return nil }
+func (h *helpHost) Coord(p listen.Packet) (listen.Packet, error) {
+	return listen.Packet{OK: true, Op: "coord"}, nil
+}
+func (h *helpHost) Status() listen.Status { return listen.Status{} }
 
 func TestHelpToggleQuestionAndF1(t *testing.T) {
 	m := Model{cfg: &config.File{}}
