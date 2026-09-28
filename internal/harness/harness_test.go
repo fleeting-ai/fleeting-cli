@@ -8,6 +8,7 @@ import (
 )
 
 func TestInstalledFiltersMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	claude := filepath.Join(dir, "claude")
 	if err := os.WriteFile(claude, []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -35,6 +36,7 @@ func TestResolveUnknown(t *testing.T) {
 }
 
 func TestCursorPrefersAgent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	dir := t.TempDir()
 	agent := filepath.Join(dir, "agent")
 	cursor := filepath.Join(dir, "cursor")
@@ -136,6 +138,43 @@ func TestMissingCmdMentionsBinary(t *testing.T) {
 	cmd = MissingCmd("codex", "nova")
 	if !strings.Contains(cmd[2], "codex not found") {
 		t.Fatalf("help %s", cmd[2])
+	}
+}
+
+func TestFindBinUsesLocalBinWhenPATHEmpty(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	local := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	omp := filepath.Join(local, "omp")
+	if err := os.WriteFile(omp, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := lookPath
+	lookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	t.Cleanup(func() { lookPath = old })
+
+	in, err := Resolve("omp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.Path != omp {
+		t.Fatalf("got %s want %s", in.Path, omp)
+	}
+	path := PATHEnv()
+	if !strings.Contains(path, local) {
+		t.Fatalf("PATHEnv missing %s: %s", local, path)
+	}
+}
+
+func TestLooksLikeMissingCmd(t *testing.T) {
+	if !LooksLikeMissingCmd(MissingCmd("omp", "risa")) {
+		t.Fatal("placeholder should match")
+	}
+	if LooksLikeMissingCmd([]string{"/home/u/.local/bin/omp", "--profile", "risa"}) {
+		t.Fatal("real cmd")
 	}
 }
 

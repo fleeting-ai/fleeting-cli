@@ -90,6 +90,8 @@ go run ./cmd/fleeting        # or: fleeting daemon, then attach
 
 `go run` is especially easy to get wrong: the first run may have spawned `…/go-build/…/fleeting daemon` from an old checkout. `-r` will happily reattach to that. Always `down` after pulling harness changes.
 
+The daemon often does **not** load `.bashrc`, so `~/.local/bin` (where `omp` usually lives) can be missing from PATH even though `which omp` works in your shell. Fleeting now searches `~/.local/bin` (and a few other user bins) when resolving harnesses and prepends them to each agent PATH.
+
 ## Oh My Pi (required for cells)
 
 Ubuntu/WSL:

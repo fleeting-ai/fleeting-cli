@@ -149,6 +149,9 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 	if a.Harness == "" && len(a.Cmd) > 0 {
 		a.Harness = harness.IDFromBin(a.Cmd[0])
 	}
+	if len(a.Cmd) == 0 || harness.LooksLikeMissingCmd(a.Cmd) {
+		a.Cmd = config.DefaultCmd(&a)
+	}
 	cmd := exec.Command(a.Cmd[0], a.Cmd[1:]...)
 	env := []string{
 		"FLEETING_NAME=" + a.Name,
@@ -161,6 +164,7 @@ func (s *Server) spawn(fleetID string, a config.Agent) error {
 		"COLORTERM=truecolor",
 	}
 	env = append(env, harness.PrepareSession(config.Dir(), a.Harness, a.Name)...)
+	env = append(env, "PATH="+harness.PATHEnv())
 	cmd.Env = append(os.Environ(), env...)
 	_ = os.MkdirAll(filepath.Join(config.Dir(), "sessions", a.Name), 0o755)
 	ptmx, err := pty.Start(cmd)

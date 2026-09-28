@@ -58,11 +58,8 @@ func Resolve(id string) (Installed, error) {
 
 func resolve(sp Spec) (Installed, bool) {
 	for _, bin := range sp.Bins {
-		p, err := lookPath(bin)
+		p, err := findBin(bin)
 		if err != nil {
-			continue
-		}
-		if !canExec(p) {
 			continue
 		}
 		return Installed{
@@ -73,6 +70,64 @@ func resolve(sp Spec) (Installed, bool) {
 		}, true
 	}
 	return Installed{}, false
+}
+
+// extraBinDirs are on interactive PATHs (bashrc) but often missing from a
+// daemon started without a login shell — e.g. ~/.local/bin/omp.
+func extraBinDirs() []string {
+	var dirs []string
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		dirs = append(dirs,
+			filepath.Join(home, ".local", "bin"),
+			filepath.Join(home, "bin"),
+			filepath.Join(home, ".bun", "bin"),
+			filepath.Join(home, ".npm-global", "bin"),
+		)
+	}
+	dirs = append(dirs, "/usr/local/bin", "/opt/homebrew/bin")
+	return dirs
+}
+
+func findBin(name string) (string, error) {
+	if p, err := lookPath(name); err == nil && canExec(p) {
+		return p, nil
+	}
+	for _, dir := range extraBinDirs() {
+		p := filepath.Join(dir, name)
+		if canExec(p) {
+			return p, nil
+		}
+	}
+	return "", os.ErrNotExist
+}
+
+// PATHEnv prepends extraBinDirs so child processes (omp, npm shims) resolve.
+func PATHEnv() string {
+	seen := map[string]bool{}
+	var parts []string
+	add := func(dir string) {
+		if dir == "" || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		parts = append(parts, dir)
+	}
+	for _, dir := range extraBinDirs() {
+		add(dir)
+	}
+	for _, dir := range strings.Split(os.Getenv("PATH"), string(os.PathListSeparator)) {
+		add(dir)
+	}
+	return strings.Join(parts, string(os.PathListSeparator))
+}
+
+// LooksLikeMissingCmd is the keep-alive placeholder when a harness was absent
+// at config load. Spawn re-resolves in case ~/.local/bin was skipped then.
+func LooksLikeMissingCmd(cmd []string) bool {
+	if len(cmd) < 3 {
+		return false
+	}
+	return cmd[0] == "bash" && strings.Contains(cmd[2], "not found on PATH")
 }
 
 // CmdForAgent is the argv to spawn. OMP gets --profile <persona>, never --alias.
